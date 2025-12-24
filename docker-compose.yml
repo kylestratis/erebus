@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  erebus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: erebus
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      # Mount config for secrets (if needed)
+      - ./config:/app/config:ro
+      # Mount logs
+      - ./logs:/app/logs
+    networks:
+      - erebus-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # Letta service (if running separately)
+  # Uncomment if you want to run Letta as a separate container
+  # letta:
+  #   image: letta/letta:latest
+  #   container_name: letta-server
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8283:8283"
+  #   environment:
+  #     - LETTA_API_KEY=${LETTA_API_KEY}
+  #   volumes:
+  #     - letta-data:/root/.letta
+  #   networks:
+  #     - erebus-network
+
+networks:
+  erebus-network:
+    driver: bridge
+
+volumes:
+  letta-data:
+    driver: local

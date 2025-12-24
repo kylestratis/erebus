@@ -1,0 +1,41 @@
+[tools]
+python = "3.12"
+node = "20"  # For any tooling that needs Node
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.setup]
+description = "Set up development environment"
+run = """
+uv sync
+echo "✅ Dependencies installed"
+echo "📝 Copy .env.example to .env and fill in your credentials"
+"""
+
+[tasks.test]
+description = "Run test suite"
+run = "uv run pytest"
+
+[tasks.lint]
+description = "Run linters"
+run = """
+uv run ruff check .
+uv run mypy .
+"""
+
+[tasks.format]
+description = "Format code"
+run = "uv run ruff format ."
+
+[tasks.dev]
+description = "Run bot in development mode"
+run = "uv run python -m bot"
+
+[tasks.mcp-obsidian]
+description = "Run Obsidian MCP server"
+run = "cd mcp-servers/obsidian && uv run python -m server"
+
+[tasks.mcp-learning]
+description = "Run Learning MCP server"
+run = "cd mcp-servers/learning && uv run python -m server"
