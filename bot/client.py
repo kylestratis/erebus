@@ -6,20 +6,26 @@ for secure, personal assistant operation.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
+
+from agents import AnthropicProvider, ConversationManager, ModelError, RateLimitError
 
 if TYPE_CHECKING:
     from bot.config import Config
 
 logger = logging.getLogger(__name__)
 
-# Rate limiting for placeholder responses (seconds between responses per user)
-PLACEHOLDER_RESPONSE_COOLDOWN = 30
+# Discord message length limit
+DISCORD_MESSAGE_MAX_LENGTH = 2000
+
+# Timeout for model API requests (seconds)
+MODEL_REQUEST_TIMEOUT = 60.0
 
 
 class ErebusBot(commands.Bot):
@@ -31,6 +37,7 @@ class ErebusBot(commands.Bot):
     Attributes:
         config: Bot configuration instance.
         start_time: When the bot started (for uptime tracking).
+        conversation_manager: Manages conversations with the AI model.
     """
 
     def __init__(self, config: Config) -> None:
@@ -52,7 +59,18 @@ class ErebusBot(commands.Bot):
 
         self.config = config
         self.start_time: datetime | None = None
-        self._last_placeholder_response: dict[int, datetime] = {}
+        self.conversation_manager: ConversationManager | None = None
+
+        # Initialize AI model if API key is available
+        if config.claude_api_key:
+            model = AnthropicProvider(api_key=config.claude_api_key)
+            self.conversation_manager = ConversationManager(model=model)
+            logger.info(f"Initialized AI model: {model.name} ({model.default_model})")
+        else:
+            logger.warning(
+                "CLAUDE_API_KEY not set - AI features disabled. "
+                "Set CLAUDE_API_KEY in your .env file to enable AI responses."
+            )
 
     async def setup_hook(self) -> None:
         """Async setup called after login but before connecting.
@@ -105,6 +123,10 @@ class ErebusBot(commands.Bot):
         if message.author.id == self.user.id:
             return
 
+        # Ignore empty messages early
+        if not message.content or not message.content.strip():
+            return
+
         # Security check: only respond to whitelisted users
         if not self.config.is_user_allowed(message.author.id):
             logger.warning(
@@ -133,21 +155,122 @@ class ErebusBot(commands.Bot):
         # Process commands (slash commands handled separately by discord.py)
         await self.process_commands(message)
 
-        # TODO: Route non-command messages to the AI agent
-        # For now, just acknowledge with rate limiting to prevent spam
+        # Route non-command messages to the AI agent
         if not message.content.startswith(self.command_prefix):
-            now = datetime.now(UTC)
-            last_response = self._last_placeholder_response.get(message.author.id)
+            await self._handle_ai_message(message)
 
-            if last_response is None or (
-                now - last_response > timedelta(seconds=PLACEHOLDER_RESPONSE_COOLDOWN)
-            ):
-                self._last_placeholder_response[message.author.id] = now
-                await message.channel.send(
-                    "*Erebus stirs in the darkness...*\n\n"
-                    "I'm still learning to speak. "
-                    "Use `/ping` or `/status` for now."
+    async def _handle_ai_message(self, message: discord.Message) -> None:
+        """Handle a message by routing it to the AI model.
+
+        Security: This method performs its own authorization check as defense-in-depth,
+        even though callers should have already verified the user is authorized.
+
+        Args:
+            message: The Discord message to process.
+        """
+        # Defense-in-depth: verify authorization even though caller should have checked
+        if not self.config.is_user_allowed(message.author.id):
+            logger.error(
+                f"SECURITY: _handle_ai_message called for unauthorized user "
+                f"{message.author.id} - this should not happen"
+            )
+            return
+
+        # Check if AI is available
+        if not self.conversation_manager:
+            await message.channel.send(
+                "*Erebus stirs but cannot speak...*\n\n"
+                "AI features are disabled. Please configure `CLAUDE_API_KEY` to enable me."
+            )
+            return
+
+        # Show typing indicator while processing
+        async with message.channel.typing():
+            try:
+                response = await asyncio.wait_for(
+                    self.conversation_manager.chat(
+                        user_id=message.author.id,
+                        message=message.content,
+                    ),
+                    timeout=MODEL_REQUEST_TIMEOUT,
                 )
+
+                # Send the response
+                if response.content:
+                    await self._send_long_message(message.channel, response.content)
+                else:
+                    # Model returned no content (shouldn't happen in normal chat)
+                    logger.warning(f"Model returned empty response for user {message.author.id}")
+                    await message.channel.send(
+                        "*Erebus ponders in silence...*\n\nI'm not sure how to respond to that."
+                    )
+
+            except TimeoutError:
+                logger.error(f"Model request timed out for user {message.author.id}")
+                await message.channel.send(
+                    "The request took too long to process. Please try again."
+                )
+
+            except RateLimitError as e:
+                logger.warning(f"Rate limited: {e}")
+                retry_msg = f" Try again in {e.retry_after:.0f} seconds." if e.retry_after else ""
+                await message.channel.send(
+                    f"I'm being rate limited by my AI provider.{retry_msg} Please wait a moment."
+                )
+
+            except ModelError as e:
+                logger.exception(f"Model error for user {message.author.id}: {e}")
+                await message.channel.send(
+                    "I encountered an error while thinking. Please try again."
+                )
+
+            except Exception as e:
+                logger.exception(f"Unexpected error handling message: {e}")
+                await message.channel.send(
+                    "Something unexpected went wrong. Please try again later."
+                )
+
+    async def _send_long_message(
+        self,
+        channel: discord.abc.Messageable,
+        content: str,
+        max_length: int = DISCORD_MESSAGE_MAX_LENGTH,
+    ) -> None:
+        """Send a message, splitting it if it exceeds Discord's limit.
+
+        Args:
+            channel: The channel to send to.
+            content: The message content.
+            max_length: Maximum message length (Discord limit is 2000).
+        """
+        if len(content) <= max_length:
+            await channel.send(content)
+            return
+
+        # Split on newlines first, then by length
+        chunks: list[str] = []
+        current_chunk = ""
+
+        for line in content.split("\n"):
+            # If adding this line would exceed the limit, start a new chunk
+            if len(current_chunk) + len(line) + 1 > max_length:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                # If the line itself is too long, split it
+                while len(line) > max_length:
+                    chunks.append(line[:max_length])
+                    line = line[max_length:]
+                current_chunk = line
+            else:
+                current_chunk += "\n" + line if current_chunk else line
+
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+
+        # Send all chunks
+        for chunk in chunks:
+            if chunk:
+                await channel.send(chunk)
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         """Handle command errors gracefully.
