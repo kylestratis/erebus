@@ -76,3 +76,6 @@ data/
 tmp/
 temp/
 *.tmp
+
+# Personal files
+CLAUDE.md

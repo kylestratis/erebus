@@ -157,8 +157,3 @@ MIT License - See [LICENSE](LICENSE) file
 **EidolonMemory** (εἴδωλον) - The phantom that remembers. Greek for "image, phantom, ghost" - Plato's imperfect copies learning to reflect ideal forms. The memory system that learns and mirrors your patterns.
 
 *"In darkness, all things are possible. In memory, all things persist."*
-
-## Related
-
-- [Obsidian Vault Project Notes](../Obsidian/akashic-vault/Spaces/Efforts/Works-from-anywhere%20Assistant/)
-- [Original Idea Seed](../Obsidian/akashic-vault/Bins/Ideas/Works-from-anywhere%20AI%20assistant.md)
