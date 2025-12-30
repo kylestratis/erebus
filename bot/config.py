@@ -37,6 +37,9 @@ class Config:
     allowed_user_ids: set[int]
     discord_guild_id: int | None = None
 
+    # AI Model settings
+    claude_api_key: str | None = None
+
     # Application settings
     environment: Environment = Environment.DEVELOPMENT
     log_level: str = "INFO"
@@ -125,11 +128,17 @@ class Config:
         if log_level not in valid_levels:
             log_level = "INFO"
 
+        # Optional: Claude API key (required for AI features)
+        claude_api_key = os.getenv("CLAUDE_API_KEY")
+        if claude_api_key == "your_anthropic_api_key_here":
+            claude_api_key = None
+
         return cls(
             discord_bot_token=discord_bot_token,
             discord_user_id=discord_user_id,
             allowed_user_ids=allowed_user_ids,
             discord_guild_id=discord_guild_id,
+            claude_api_key=claude_api_key,
             environment=environment,
             log_level=log_level,
         )
