@@ -14,7 +14,14 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import commands
 
-from agents import AnthropicProvider, ConversationManager, ModelError, RateLimitError
+from agents import (
+    AnthropicProvider,
+    ConversationManager,
+    MCPClientManager,
+    ModelError,
+    RateLimitError,
+    create_todoist_config,
+)
 
 if TYPE_CHECKING:
     from bot.config import Config
@@ -38,6 +45,7 @@ class ErebusBot(commands.Bot):
         config: Bot configuration instance.
         start_time: When the bot started (for uptime tracking).
         conversation_manager: Manages conversations with the AI model.
+        mcp: MCP client manager for tool integrations.
     """
 
     def __init__(self, config: Config) -> None:
@@ -60,12 +68,13 @@ class ErebusBot(commands.Bot):
         self.config = config
         self.start_time: datetime | None = None
         self.conversation_manager: ConversationManager | None = None
+        self.mcp: MCPClientManager | None = None
+        self._model: AnthropicProvider | None = None
 
         # Initialize AI model if API key is available
         if config.claude_api_key:
-            model = AnthropicProvider(api_key=config.claude_api_key)
-            self.conversation_manager = ConversationManager(model=model)
-            logger.info(f"Initialized AI model: {model.name} ({model.default_model})")
+            self._model = AnthropicProvider(api_key=config.claude_api_key)
+            logger.info(f"Initialized AI model: {self._model.name} ({self._model.default_model})")
         else:
             logger.warning(
                 "CLAUDE_API_KEY not set - AI features disabled. "
@@ -75,13 +84,24 @@ class ErebusBot(commands.Bot):
     async def setup_hook(self) -> None:
         """Async setup called after login but before connecting.
 
-        Loads cogs and syncs commands.
+        Loads cogs, initializes MCP connections, and syncs commands.
         """
         # Load core cog with basic commands
         from bot.cogs.core import CoreCog
 
         await self.add_cog(CoreCog(self))
         logger.info("Loaded CoreCog")
+
+        # Initialize MCP and connect to servers
+        await self._setup_mcp()
+
+        # Initialize conversation manager with model and MCP
+        if self._model:
+            self.conversation_manager = ConversationManager(
+                model=self._model,
+                mcp=self.mcp,
+            )
+            logger.info("Initialized conversation manager")
 
         # Sync commands
         if self.config.discord_guild_id:
@@ -94,6 +114,28 @@ class ErebusBot(commands.Bot):
             # Global sync (can take up to an hour to propagate)
             await self.tree.sync()
             logger.info("Synced commands globally")
+
+    async def _setup_mcp(self) -> None:
+        """Initialize MCP client and connect to configured servers."""
+        # Only initialize if we have integrations configured
+        if not self.config.todoist_api_key:
+            logger.info("No MCP integrations configured (TODOIST_API_TOKEN not set)")
+            return
+
+        try:
+            self.mcp = MCPClientManager()
+            await self.mcp.start()
+
+            # Connect to Todoist MCP server
+            if self.config.todoist_api_key:
+                todoist_config = create_todoist_config(self.config.todoist_api_key)
+                await self.mcp.connect(todoist_config)
+                logger.info("Connected to Todoist MCP server")
+
+        except Exception as e:
+            logger.exception(f"Failed to initialize MCP: {e}")
+            # Continue without MCP - AI will work but without tools
+            self.mcp = None
 
     async def on_ready(self) -> None:
         """Called when the bot is ready and connected."""
@@ -289,6 +331,16 @@ class ErebusBot(commands.Bot):
         # Log unexpected errors
         logger.exception(f"Command error: {error}")
         await ctx.send("An error occurred while processing your command. Please try again later.")
+
+    async def close(self) -> None:
+        """Clean up resources before shutting down."""
+        # Clean up MCP connections
+        if self.mcp:
+            logger.info("Shutting down MCP connections...")
+            await self.mcp.stop()
+
+        # Call parent close
+        await super().close()
 
     @property
     def uptime(self) -> str:

@@ -50,7 +50,7 @@ class AnthropicProvider(ModelProvider):
             api_key: Anthropic API key.
         """
         self.client = AsyncAnthropic(api_key=api_key)
-        self._default_model = "claude-sonnet-4-20250514"
+        self._default_model = "claude-haiku-4-5-20251001"
 
     @property
     def name(self) -> str:

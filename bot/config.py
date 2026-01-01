@@ -40,6 +40,9 @@ class Config:
     # AI Model settings
     claude_api_key: str | None = None
 
+    # MCP/Integration settings
+    todoist_api_key: str | None = None
+
     # Application settings
     environment: Environment = Environment.DEVELOPMENT
     log_level: str = "INFO"
@@ -133,12 +136,18 @@ class Config:
         if claude_api_key == "your_anthropic_api_key_here":
             claude_api_key = None
 
+        # Optional: Todoist API key (required for task management)
+        todoist_api_key = os.getenv("TODOIST_API_TOKEN")
+        if todoist_api_key == "your_todoist_api_token_here":
+            todoist_api_key = None
+
         return cls(
             discord_bot_token=discord_bot_token,
             discord_user_id=discord_user_id,
             allowed_user_ids=allowed_user_ids,
             discord_guild_id=discord_guild_id,
             claude_api_key=claude_api_key,
+            todoist_api_key=todoist_api_key,
             environment=environment,
             log_level=log_level,
         )

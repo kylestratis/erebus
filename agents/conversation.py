@@ -5,14 +5,16 @@ Handles per-user conversation history and context management.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from agents.models import Message, ModelProvider, Response, Role
+from agents.config import DEFAULT_AGENT_CONFIG, AgentConfig
+from agents.models import Message, ModelProvider, Response, Role, ToolResult, ToolUse
 
 if TYPE_CHECKING:
-    pass
+    from agents.mcp import MCPClientManager
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +31,18 @@ Guidelines:
 - Keep responses concise unless detail is requested
 - Use markdown formatting when helpful (Discord supports it)
 - If asked about capabilities you don't have, be honest about limitations
-- Never pretend to have access to tools or data you don't have
+- Use your available tools when they would help answer the user's question
+- When using Todoist tools, be helpful with task management
+
+Safety guidelines for destructive operations:
+- Before completing a task (todoist_close_task), state which task you will mark done and ask for confirmation
+- Before deleting a task (todoist_delete_task), always ask for explicit confirmation with task details
+- When multiple tasks could match a request, list the matching tasks and ask which one
+- Wait for an affirmative response (e.g., "yes", "do it", task name) before executing destructive operations
 
 Current capabilities:
 - Natural conversation and questions
-- (More capabilities will be added as Erebus grows)
+- Todoist task management (when configured)
 """
 
 # Maximum messages to retain in conversation history
@@ -78,6 +87,20 @@ class Conversation:
         )
         self._trim_history()
 
+    def add_tool_results(self, tool_results: list[ToolResult]) -> None:
+        """Add tool results as a user message.
+
+        Args:
+            tool_results: The tool execution results.
+        """
+        self.messages.append(
+            Message(
+                role=Role.USER,
+                tool_results=tool_results,
+            )
+        )
+        self._trim_history()
+
     def _trim_history(self) -> None:
         """Trim conversation history to stay within limits."""
         if len(self.messages) > MAX_HISTORY_MESSAGES:
@@ -98,19 +121,31 @@ class ConversationManager:
     """Manages conversations across multiple users.
 
     Handles conversation state, model interaction, and history management.
+    Supports MCP tool integration for extended capabilities.
 
     Attributes:
         model: The model provider to use for completions.
+        mcp: Optional MCP client manager for tool access.
+        config: Agent configuration for behavior settings.
         conversations: Active conversations by user ID.
     """
 
-    def __init__(self, model: ModelProvider) -> None:
+    def __init__(
+        self,
+        model: ModelProvider,
+        mcp: MCPClientManager | None = None,
+        config: AgentConfig | None = None,
+    ) -> None:
         """Initialize the conversation manager.
 
         Args:
             model: The model provider to use.
+            mcp: Optional MCP client manager for tool access.
+            config: Agent configuration. Uses defaults if not provided.
         """
         self.model = model
+        self.mcp = mcp
+        self.config = config or DEFAULT_AGENT_CONFIG
         self.conversations: dict[int, Conversation] = {}
 
     def get_conversation(self, user_id: int) -> Conversation:
@@ -130,12 +165,18 @@ class ConversationManager:
     async def chat(self, user_id: int, message: str) -> Response:
         """Send a message and get a response.
 
+        Implements an agent loop that handles tool calls:
+        1. Send message to model with available tools
+        2. If model requests tool use, execute tools via MCP
+        3. Send tool results back to model
+        4. Repeat until model returns final response
+
         Args:
             user_id: Discord user ID.
             message: The user's message.
 
         Returns:
-            The model's response.
+            The model's response (final response after any tool calls).
 
         Raises:
             ModelError: If the model request fails.
@@ -143,20 +184,102 @@ class ConversationManager:
         conversation = self.get_conversation(user_id)
         conversation.add_user_message(message)
 
-        response = await self.model.complete(
-            messages=conversation.messages,
-            system=conversation.system_prompt,
-        )
+        # Get available tools from MCP
+        tools = self.mcp.get_all_tools() if self.mcp else None
 
-        conversation.add_assistant_message(response)
+        # Agent loop - handle tool calls until we get a final response
+        total_input_tokens = 0
+        total_output_tokens = 0
+        iterations = 0
+
+        for _ in range(self.config.max_tool_iterations):
+            iterations += 1
+            response = await self.model.complete(
+                messages=conversation.messages,
+                system=conversation.system_prompt,
+                tools=tools,
+            )
+
+            total_input_tokens += response.usage.get("input_tokens", 0)
+            total_output_tokens += response.usage.get("output_tokens", 0)
+
+            # Add the assistant's response to conversation
+            conversation.add_assistant_message(response)
+
+            # If no tool use, we're done
+            if not response.has_tool_use:
+                break
+
+            # Execute tool calls
+            if self.mcp:
+                tool_results = await self._execute_tools(response.tool_uses)
+                conversation.add_tool_results(tool_results)
+                logger.debug(f"Executed {len(tool_results)} tool(s), continuing agent loop")
+            else:
+                # No MCP available but model requested tools - shouldn't happen
+                logger.warning("Model requested tool use but no MCP client available")
+                break
+        else:
+            logger.warning(
+                f"Agent loop reached max iterations ({self.config.max_tool_iterations}) "
+                f"for user {user_id}"
+            )
 
         logger.debug(
             f"Chat with user {user_id}: "
-            f"input_tokens={response.usage.get('input_tokens', 0)}, "
-            f"output_tokens={response.usage.get('output_tokens', 0)}"
+            f"input_tokens={total_input_tokens}, "
+            f"output_tokens={total_output_tokens}, "
+            f"iterations={iterations}"
         )
 
         return response
+
+    async def _execute_tools(self, tool_uses: list[ToolUse]) -> list[ToolResult]:
+        """Execute tool calls via MCP.
+
+        Args:
+            tool_uses: List of tool use requests from the model.
+
+        Returns:
+            List of tool results.
+
+        Raises:
+            RuntimeError: If MCP client is not available.
+        """
+        if self.mcp is None:
+            raise RuntimeError("Cannot execute tools: MCP client not available")
+
+        results: list[ToolResult] = []
+
+        for tool_use in tool_uses:
+            try:
+                result_content = await asyncio.wait_for(
+                    self.mcp.call_tool(
+                        tool_name=tool_use.name,
+                        arguments=tool_use.input,
+                    ),
+                    timeout=self.config.tool_call_timeout,
+                )
+                results.append(
+                    ToolResult(
+                        tool_use_id=tool_use.id,
+                        content=result_content,
+                        is_error=False,
+                    )
+                )
+                if self.config.log_tool_calls:
+                    logger.debug(f"Tool {tool_use.name} executed successfully")
+            except Exception as e:
+                logger.exception(f"Tool {tool_use.name} failed: {e}")
+                results.append(
+                    ToolResult(
+                        tool_use_id=tool_use.id,
+                        content=f"Error executing tool: {e}",
+                        is_error=True,
+                    )
+                )
+
+        return results
 
     def clear_conversation(self, user_id: int) -> bool:
         """Clear a user's conversation history.
