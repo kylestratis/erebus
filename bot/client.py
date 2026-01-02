@@ -24,7 +24,7 @@ from agents import (
 )
 
 if TYPE_CHECKING:
-    from bot.config import Config
+    from bot.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class ErebusBot(commands.Bot):
         mcp: MCP client manager for tool integrations.
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Settings) -> None:
         """Initialize the Erebus bot.
 
         Args:
@@ -118,7 +118,7 @@ class ErebusBot(commands.Bot):
     async def _setup_mcp(self) -> None:
         """Initialize MCP client and connect to configured servers."""
         # Only initialize if we have integrations configured
-        if not self.config.todoist_api_key:
+        if not self.config.todoist_api_token:
             logger.info("No MCP integrations configured (TODOIST_API_TOKEN not set)")
             return
 
@@ -127,8 +127,8 @@ class ErebusBot(commands.Bot):
             await self.mcp.start()
 
             # Connect to Todoist MCP server
-            if self.config.todoist_api_key:
-                todoist_config = create_todoist_config(self.config.todoist_api_key)
+            if self.config.todoist_api_token:
+                todoist_config = create_todoist_config(self.config.todoist_api_token)
                 await self.mcp.connect(todoist_config)
                 logger.info("Connected to Todoist MCP server")
 

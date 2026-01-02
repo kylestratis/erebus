@@ -15,10 +15,10 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 if TYPE_CHECKING:
-    from bot.config import Config
+    from bot.config import Settings
 
 
-def setup_logging(config: Config) -> None:
+def setup_logging(config: Settings) -> None:
     """Configure logging for the application.
 
     Uses rich for development console output and structlog for

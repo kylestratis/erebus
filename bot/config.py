@@ -1,21 +1,21 @@
-"""Bot configuration loading and validation.
+"""Bot configuration using pydantic-settings.
 
-Loads configuration from environment variables with validation
-and sensible defaults for the Erebus Discord bot.
+Loads configuration from environment variables with validation.
+In development, loads from .env file. In production, use Docker env vars.
 """
 
 from __future__ import annotations
 
-import os
-import warnings
-from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
+from pathlib import Path
 from typing import ClassVar
 
-from dotenv import load_dotenv
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Environment(Enum):
+class Environment(str, Enum):
     """Application environment."""
 
     DEVELOPMENT = "development"
@@ -23,134 +23,169 @@ class Environment(Enum):
     PRODUCTION = "production"
 
 
-@dataclass
-class Config:
-    """Erebus bot configuration.
+class Settings(BaseSettings):
+    """Erebus application settings.
 
-    Loads and validates configuration from environment variables.
-    All sensitive values are loaded from environment, never hardcoded.
+    Loads configuration from environment variables. In development,
+    also reads from .env file. Environment variables take precedence.
+
+    Attributes:
+        discord_bot_token: Discord bot token for authentication.
+        discord_user_id: Primary user's Discord ID.
+        discord_guild_id: Optional guild ID for faster command sync.
+        allowed_user_ids: Set of Discord user IDs allowed to use the bot.
+        claude_api_key: Anthropic API key for Claude.
+        todoist_api_token: Todoist API token for task management.
+        obsidian_vault_path: Path to Obsidian vault root.
+        obsidian_templates_path: Relative path to templates directory.
+        obsidian_daily_notes_path: Relative path to daily notes directory.
+        obsidian_daily_note_format: strftime format for daily note filenames.
+        environment: Application environment (development/staging/production).
+        log_level: Logging level.
     """
 
-    # Discord settings
-    discord_bot_token: str
-    discord_user_id: int
-    allowed_user_ids: set[int]
-    discord_guild_id: int | None = None
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",  # Ignore extra env vars
+    )
 
-    # AI Model settings
-    claude_api_key: str | None = None
-
-    # MCP/Integration settings
-    todoist_api_key: str | None = None
-
-    # Application settings
-    environment: Environment = Environment.DEVELOPMENT
-    log_level: str = "INFO"
-
-    # Class-level constants
+    # Class-level constants (not loaded from env)
     BOT_NAME: ClassVar[str] = "Erebus"
     BOT_DESCRIPTION: ClassVar[str] = "The darkness that works - a stateful AI assistant"
 
+    # Discord settings (required)
+    discord_bot_token: str = Field(description="Discord bot token")
+    discord_user_id: int = Field(description="Primary Discord user ID")
+    discord_guild_id: int | None = Field(
+        default=None,
+        description="Optional guild ID for faster command sync in development",
+    )
+
+    # User allowlist
+    allowed_user_ids: set[int] = Field(
+        default_factory=set,
+        description="Comma-separated list of allowed Discord user IDs",
+    )
+
+    # AI Model settings
+    claude_api_key: str | None = Field(
+        default=None,
+        description="Anthropic API key for Claude",
+    )
+
+    # Integration settings
+    todoist_api_token: str | None = Field(
+        default=None,
+        description="Todoist API token",
+    )
+
+    # Obsidian vault settings
+    obsidian_vault_path: Path | None = Field(
+        default=None,
+        description="Path to Obsidian vault root",
+    )
+    obsidian_templates_path: str = Field(
+        default="Templates",
+        description="Relative path to templates directory in vault",
+    )
+    obsidian_daily_notes_path: str = Field(
+        default="Calendar/Daily Notes",
+        description="Relative path to daily notes directory in vault",
+    )
+    obsidian_daily_note_format: str = Field(
+        default="%Y-%m-%d",
+        description="strftime format for daily note filenames",
+    )
+
+    # Application settings
+    environment: Environment = Field(
+        default=Environment.DEVELOPMENT,
+        description="Application environment",
+    )
+    log_level: str = Field(
+        default="INFO",
+        description="Logging level",
+    )
+
+    @field_validator("allowed_user_ids", mode="before")
     @classmethod
-    def from_env(cls, env_file: str | None = None) -> Config:
-        """Load configuration from environment variables.
-
-        Args:
-            env_file: Optional path to .env file. If not provided,
-                     looks for .env in current directory.
-
-        Returns:
-            Validated Config instance.
-
-        Raises:
-            ValueError: If required configuration is missing or invalid.
-        """
-        if env_file:
-            load_dotenv(env_file)
-        else:
-            load_dotenv()
-
-        # Required: Discord bot token
-        discord_bot_token = os.getenv("DISCORD_BOT_TOKEN")
-        if not discord_bot_token or discord_bot_token == "your_discord_bot_token_here":
-            raise ValueError(
-                "DISCORD_BOT_TOKEN is required. "
-                "Get it from https://discord.com/developers/applications"
-            )
-
-        # Required: Primary user ID for whitelist
-        discord_user_id_str = os.getenv("DISCORD_USER_ID")
-        if not discord_user_id_str or discord_user_id_str == "your_discord_user_id_here":
-            raise ValueError(
-                "DISCORD_USER_ID is required. "
-                "Enable Developer Mode in Discord and copy your user ID."
-            )
-
-        try:
-            discord_user_id = int(discord_user_id_str)
-        except ValueError as e:
-            raise ValueError(
-                f"DISCORD_USER_ID must be a valid integer, got: {discord_user_id_str}"
-            ) from e
-
-        # Build allowed user IDs set (includes primary user)
-        allowed_user_ids = {discord_user_id}
-        allowed_ids_str = os.getenv("ALLOWED_USER_IDS", "")
-        if allowed_ids_str and allowed_ids_str != "your_discord_user_id_here":
-            for id_str in allowed_ids_str.split(","):
+    def parse_allowed_user_ids(cls, v: str | set[int] | list[int] | None) -> set[int]:
+        """Parse comma-separated user IDs into a set."""
+        if v is None:
+            return set()
+        if isinstance(v, set):
+            return v
+        if isinstance(v, list):
+            return set(v)
+        if isinstance(v, str):
+            if not v or v == "your_discord_user_id_here":
+                return set()
+            result = set()
+            for id_str in v.split(","):
                 id_str = id_str.strip()
                 if id_str:
                     try:
-                        allowed_user_ids.add(int(id_str))
+                        result.add(int(id_str))
                     except ValueError:
-                        warnings.warn(
-                            f"Invalid user ID in ALLOWED_USER_IDS: '{id_str}' - skipping",
-                            UserWarning,
-                            stacklevel=2,
-                        )
+                        pass  # Skip invalid IDs
+            return result
+        return set()
 
-        # Optional: Guild ID for faster command sync during development
-        discord_guild_id = None
-        guild_id_str = os.getenv("DISCORD_GUILD_ID")
-        if guild_id_str and guild_id_str != "optional_test_server_id":
-            try:
-                discord_guild_id = int(guild_id_str)
-            except ValueError:
-                pass  # Use global commands if invalid
-
-        # Environment
-        env_str = os.getenv("ENVIRONMENT", "development").lower()
-        try:
-            environment = Environment(env_str)
-        except ValueError:
-            environment = Environment.DEVELOPMENT
-
-        # Log level
-        log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    @field_validator("log_level", mode="after")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Ensure log level is valid."""
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-        if log_level not in valid_levels:
-            log_level = "INFO"
+        v = v.upper()
+        if v not in valid_levels:
+            return "INFO"
+        return v
 
-        # Optional: Claude API key (required for AI features)
-        claude_api_key = os.getenv("CLAUDE_API_KEY")
-        if claude_api_key == "your_anthropic_api_key_here":
-            claude_api_key = None
+    @field_validator("discord_bot_token", mode="before")
+    @classmethod
+    def validate_discord_token(cls, v: str | None) -> str:
+        """Validate Discord bot token is set and not a placeholder."""
+        if v is None or not v.strip():
+            raise ValueError("DISCORD_BOT_TOKEN is required")
+        if v == "your_discord_bot_token_here":
+            raise ValueError("DISCORD_BOT_TOKEN must be set to a valid token")
+        return v
 
-        # Optional: Todoist API key (required for task management)
-        todoist_api_key = os.getenv("TODOIST_API_TOKEN")
-        if todoist_api_key == "your_todoist_api_token_here":
-            todoist_api_key = None
+    @field_validator("discord_user_id", mode="before")
+    @classmethod
+    def validate_discord_user_id(cls, v: int | str | None) -> int:
+        """Validate Discord user ID is set and numeric."""
+        if v is None:
+            raise ValueError("DISCORD_USER_ID is required")
+        if isinstance(v, str):
+            if v == "your_discord_user_id_here" or not v.strip():
+                raise ValueError("DISCORD_USER_ID must be set to a valid numeric ID")
+            try:
+                return int(v)
+            except ValueError as e:
+                raise ValueError(f"DISCORD_USER_ID must be numeric, got: {v}") from e
+        return v
 
-        return cls(
-            discord_bot_token=discord_bot_token,
-            discord_user_id=discord_user_id,
-            allowed_user_ids=allowed_user_ids,
-            discord_guild_id=discord_guild_id,
-            claude_api_key=claude_api_key,
-            todoist_api_key=todoist_api_key,
-            environment=environment,
-            log_level=log_level,
-        )
+    @field_validator("claude_api_key", "todoist_api_token", mode="before")
+    @classmethod
+    def filter_placeholder_values(cls, v: str | None) -> str | None:
+        """Filter out placeholder values from .env.example."""
+        if v is None:
+            return None
+        placeholders = {
+            "your_anthropic_api_key_here",
+            "your_todoist_api_token_here",
+        }
+        if v in placeholders:
+            return None
+        return v
+
+    @model_validator(mode="after")
+    def ensure_primary_user_in_allowlist(self) -> Settings:
+        """Ensure primary user is always in the allowlist."""
+        self.allowed_user_ids.add(self.discord_user_id)
+        return self
 
     @property
     def is_development(self) -> bool:
@@ -172,3 +207,13 @@ class Config:
             True if user is allowed to interact with the bot.
         """
         return user_id in self.allowed_user_ids
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached application settings.
+
+    Returns:
+        Validated Settings instance.
+    """
+    return Settings()

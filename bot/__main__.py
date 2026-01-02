@@ -9,8 +9,10 @@ import asyncio
 import logging
 import sys
 
+from pydantic import ValidationError
+
 from bot.client import ErebusBot
-from bot.config import Config
+from bot.config import get_settings
 from bot.logging import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -24,21 +26,21 @@ async def main() -> int:
     """
     try:
         # Load configuration
-        config = Config.from_env()
-    except ValueError as e:
+        settings = get_settings()
+    except ValidationError as e:
         print(f"Configuration error: {e}", file=sys.stderr)
         return 1
 
     # Set up logging (must be done before using logger)
-    setup_logging(config)
-    logger.info(f"Loaded configuration for {config.environment.value} environment")
+    setup_logging(settings)
+    logger.info(f"Loaded configuration for {settings.environment.value} environment")
     logger.info("Erebus awakening...")
 
     # Create and run bot
-    bot = ErebusBot(config)
+    bot = ErebusBot(settings)
 
     try:
-        await bot.start(config.discord_bot_token)
+        await bot.start(settings.discord_bot_token)
     except KeyboardInterrupt:
         logger.info("Received interrupt, shutting down...")
     except Exception as e:
