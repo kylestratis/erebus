@@ -8,9 +8,16 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Coroutine
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from agents.models.base import ToolDefinition
+from agents.vault.vault import (
+    NoteNotFoundError,
+    PathTraversalError,
+    TemplateNotFoundError,
+    VaultError,
+)
 
 if TYPE_CHECKING:
     from agents.vault.vault import Vault
@@ -293,10 +300,21 @@ class VaultToolExecutor:
 
     async def _handle_read_note(self, path: str) -> str:
         """Handle vault_read_note tool call."""
+        # Validate input
+        if not path or not path.strip():
+            return "Error: path is required and cannot be empty"
+
         try:
             content = self.vault.read_note(path)
             return content
+        except NoteNotFoundError:
+            return f"Note not found: '{path}'. Use vault_list_notes to see available notes."
+        except PathTraversalError:
+            return f"Invalid path: '{path}' - path must be within the vault"
+        except VaultError as e:
+            return f"Vault error: {e}"
         except Exception as e:
+            logger.exception(f"Unexpected error reading note: {path}")
             return f"Error reading note: {e}"
 
     async def _handle_write_note(
@@ -307,6 +325,10 @@ class VaultToolExecutor:
         overwrite: bool = False,
     ) -> str:
         """Handle vault_write_note tool call."""
+        # Validate input
+        if not path or not path.strip():
+            return "Error: path is required and cannot be empty"
+
         try:
             written_path = self.vault.write_note(
                 path=path,
@@ -315,15 +337,36 @@ class VaultToolExecutor:
                 overwrite=overwrite,
             )
             return f"Successfully wrote note: {written_path}"
+        except TemplateNotFoundError as e:
+            templates = self.vault.list_templates()
+            available = ", ".join(sorted(templates)) if templates else "none"
+            return f"Template not found: {e}. Available templates: {available}"
+        except PathTraversalError:
+            return f"Invalid path: '{path}' - path must be within the vault"
+        except VaultError as e:
+            # Includes "note already exists" errors
+            return f"Cannot write note: {e}"
         except Exception as e:
+            logger.exception(f"Unexpected error writing note: {path}")
             return f"Error writing note: {e}"
 
     async def _handle_delete_note(self, path: str) -> str:
         """Handle vault_delete_note tool call."""
+        # Validate input
+        if not path or not path.strip():
+            return "Error: path is required and cannot be empty"
+
         try:
             self.vault.delete_note(path)
             return f"Successfully deleted note: {path}"
+        except NoteNotFoundError:
+            return f"Cannot delete: note not found at '{path}'"
+        except PathTraversalError:
+            return f"Invalid path: '{path}' - path must be within the vault"
+        except VaultError as e:
+            return f"Cannot delete note: {e}"
         except Exception as e:
+            logger.exception(f"Unexpected error deleting note: {path}")
             return f"Error deleting note: {e}"
 
     async def _handle_search_notes(
@@ -333,6 +376,10 @@ class VaultToolExecutor:
         max_results: int = 20,
     ) -> str:
         """Handle vault_search_notes tool call."""
+        # Validate input
+        if not query or not query.strip():
+            return "Error: query is required and cannot be empty"
+
         try:
             results = self.vault.search_notes(
                 query=query,
@@ -340,13 +387,19 @@ class VaultToolExecutor:
                 max_results=max_results,
             )
             if not results:
-                return f"No notes found matching '{query}'"
+                loc = f" in '{directory}'" if directory else ""
+                return f"No notes found matching '{query}'{loc}"
 
             lines = [f"Found {len(results)} match(es) for '{query}':\n"]
             for r in results:
                 lines.append(f"- {r.path}:{r.line_number}: {r.line[:100]}")
             return "\n".join(lines)
+        except PathTraversalError:
+            return f"Invalid directory: '{directory}' - path must be within the vault"
+        except VaultError as e:
+            return f"Search error: {e}"
         except Exception as e:
+            logger.exception(f"Unexpected error searching notes: {query}")
             return f"Error searching notes: {e}"
 
     async def _handle_list_notes(self, directory: str = "") -> str:
@@ -364,7 +417,12 @@ class VaultToolExecutor:
             if len(notes) > 30:
                 lines.append(f"... and {len(notes) - 30} more")
             return "\n".join(lines)
+        except PathTraversalError:
+            return f"Invalid directory: '{directory}' - path must be within the vault"
+        except VaultError as e:
+            return f"Cannot list notes: {e}"
         except Exception as e:
+            logger.exception(f"Unexpected error listing notes in: {directory}")
             return f"Error listing notes: {e}"
 
     async def _handle_list_directories(self, directory: str = "") -> str:
@@ -380,24 +438,34 @@ class VaultToolExecutor:
             for path in directories:
                 lines.append(f"- {path}")
             return "\n".join(lines)
+        except PathTraversalError:
+            return f"Invalid directory: '{directory}' - path must be within the vault"
+        except VaultError as e:
+            return f"Cannot list directories: {e}"
         except Exception as e:
+            logger.exception(f"Unexpected error listing directories in: {directory}")
             return f"Error listing directories: {e}"
 
     async def _handle_get_daily_note(self, date: str | None = None) -> str:
         """Handle vault_get_daily_note tool call."""
         try:
-            from datetime import datetime
-
             target_date = None
             if date:
-                target_date = datetime.strptime(date, "%Y-%m-%d")
+                date_str = date.strip()
+                try:
+                    target_date = datetime.strptime(date_str, "%Y-%m-%d")
+                except ValueError:
+                    return f"Invalid date format: '{date_str}'. Use YYYY-MM-DD format (e.g., 2024-01-15)"
 
             content = self.vault.get_daily_note(date=target_date)
             if content is None:
                 path = self.vault.get_daily_note_path(date=target_date)
-                return f"Daily note does not exist yet: {path}"
+                return f"Daily note does not exist yet: {path}. Use vault_create_daily_note to create it."
             return content
+        except VaultError as e:
+            return f"Cannot get daily note: {e}"
         except Exception as e:
+            logger.exception(f"Unexpected error getting daily note: {date}")
             return f"Error getting daily note: {e}"
 
     async def _handle_create_daily_note(
@@ -407,18 +475,28 @@ class VaultToolExecutor:
     ) -> str:
         """Handle vault_create_daily_note tool call."""
         try:
-            from datetime import datetime
-
             target_date = None
             if date:
-                target_date = datetime.strptime(date, "%Y-%m-%d")
+                date_str = date.strip()
+                try:
+                    target_date = datetime.strptime(date_str, "%Y-%m-%d")
+                except ValueError:
+                    return f"Invalid date format: '{date_str}'. Use YYYY-MM-DD format (e.g., 2024-01-15)"
 
             path = self.vault.create_daily_note(
                 date=target_date,
                 content=extra_content,  # If provided, overrides template
             )
             return f"Successfully created daily note: {path}"
+        except TemplateNotFoundError:
+            # Daily note template is optional, but log the warning
+            logger.warning("Daily Note template not found, using default format")
+            return "Error: Daily Note template not found"
+        except VaultError as e:
+            # Includes "note already exists" errors
+            return f"Cannot create daily note: {e}"
         except Exception as e:
+            logger.exception(f"Unexpected error creating daily note: {date}")
             return f"Error creating daily note: {e}"
 
     async def _handle_list_templates(self) -> str:
@@ -426,11 +504,14 @@ class VaultToolExecutor:
         try:
             templates = self.vault.list_templates()
             if not templates:
-                return "No templates found in vault"
+                return "No templates found in vault. Check that the templates directory exists."
 
             lines = [f"Available templates ({len(templates)}):\n"]
             for name in sorted(templates):
                 lines.append(f"- {name}")
             return "\n".join(lines)
+        except VaultError as e:
+            return f"Cannot list templates: {e}"
         except Exception as e:
+            logger.exception("Unexpected error listing templates")
             return f"Error listing templates: {e}"

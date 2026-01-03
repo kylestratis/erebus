@@ -135,6 +135,11 @@ class Vault:
         templates: Cached templates by name.
     """
 
+    # Validation constants
+    MAX_PATH_LENGTH = 500
+    DEFAULT_MAX_SEARCH_RESULTS = 50
+    MAX_SEARCH_RESULTS = 500
+
     def __init__(self, config: VaultConfig) -> None:
         """Initialize the vault.
 
@@ -169,8 +174,19 @@ class Vault:
             Absolute path within the vault.
 
         Raises:
+            VaultError: If the path is invalid.
             PathTraversalError: If the path escapes the vault root.
         """
+        # Strip and validate path
+        relative_path = relative_path.strip()
+        if not relative_path:
+            raise VaultError("Path cannot be empty")
+
+        # Check for excessively long paths
+        if len(relative_path) > self.MAX_PATH_LENGTH:
+            raise VaultError(f"Path is too long (max {self.MAX_PATH_LENGTH} characters)")
+
+        # Remove leading slashes
         clean_path = relative_path.lstrip("/")
         full_path = (self.root / clean_path).resolve()
 
@@ -182,7 +198,21 @@ class Vault:
         return full_path
 
     def _ensure_md_extension(self, path: str) -> str:
-        """Ensure a path has a .md extension."""
+        """Ensure a path has a .md extension.
+
+        Args:
+            path: The file path.
+
+        Returns:
+            Path with .md extension.
+
+        Raises:
+            VaultError: If path is empty or whitespace-only.
+        """
+        # Validate before adding extension
+        path = path.strip()
+        if not path:
+            raise VaultError("Path cannot be empty")
         if not path.endswith(".md"):
             return f"{path}.md"
         return path
@@ -525,9 +555,20 @@ class Vault:
             List of search results.
 
         Raises:
-            VaultError: If the directory does not exist.
+            VaultError: If the directory does not exist or query is empty.
             PathTraversalError: If the directory path escapes the vault.
         """
+        # Validate query
+        query = query.strip()
+        if not query:
+            raise VaultError("Search query cannot be empty")
+
+        # Validate max_results
+        if max_results < 1:
+            max_results = self.DEFAULT_MAX_SEARCH_RESULTS
+        elif max_results > self.MAX_SEARCH_RESULTS:
+            max_results = self.MAX_SEARCH_RESULTS
+
         search_root = self._resolve_path(directory) if directory else self.root
 
         if directory and not search_root.exists():
