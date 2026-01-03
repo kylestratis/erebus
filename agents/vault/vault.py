@@ -639,15 +639,17 @@ class Vault:
     def create_daily_note(
         self,
         date: datetime | None = None,
+        template: str | None = None,
         content: str | None = None,
         extra_variables: dict[str, str] | None = None,
     ) -> str:
         """Create a daily note.
 
-        Uses the "Daily Note" template if available, otherwise creates a basic note.
+        Uses the specified template if available, otherwise creates a basic note.
 
         Args:
             date: The date for the note. Defaults to today.
+            template: Optional template name to use. Defaults to "Daily Note".
             content: Optional content override (skips template).
             extra_variables: Additional template variables.
 
@@ -662,6 +664,9 @@ class Vault:
 
         path = self.get_daily_note_path(date)
 
+        # Use provided template or default to "Daily Note"
+        template_name = template if template else "Daily Note"
+
         # Prepare template variables
         variables = {
             "title": date.strftime("%A, %B %d, %Y"),
@@ -673,7 +678,7 @@ class Vault:
         return self.write_note(
             path=path,
             content=content,
-            template="Daily Note",
+            template=template_name,
             template_variables=variables,
             overwrite=False,
         )

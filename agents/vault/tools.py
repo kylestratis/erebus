@@ -217,6 +217,13 @@ def get_vault_tool_definitions() -> list[ToolDefinition]:
                         "type": "string",
                         "description": ("Optional date in YYYY-MM-DD format. Defaults to today."),
                     },
+                    "template": {
+                        "type": "string",
+                        "description": (
+                            "Optional template name to use (e.g., 'Daily Note'). "
+                            "Defaults to 'Daily Note' template."
+                        ),
+                    },
                     "extra_content": {
                         "type": "string",
                         "description": "Optional additional content to append to the template.",
@@ -471,6 +478,7 @@ class VaultToolExecutor:
     async def _handle_create_daily_note(
         self,
         date: str | None = None,
+        template: str | None = None,
         extra_content: str | None = None,
     ) -> str:
         """Handle vault_create_daily_note tool call."""
@@ -485,6 +493,7 @@ class VaultToolExecutor:
 
             path = self.vault.create_daily_note(
                 date=target_date,
+                template=template,
                 content=extra_content,  # If provided, overrides template
             )
             return f"Successfully created daily note: {path}"
