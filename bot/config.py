@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,11 +62,13 @@ class Settings(BaseSettings):
         description="Optional guild ID for faster command sync in development",
     )
 
-    # User allowlist
-    allowed_user_ids: set[int] = Field(
-        default_factory=set,
+    # User allowlist (parsed from comma-separated string in env)
+    allowed_user_ids: str = Field(
+        default="",
         description="Comma-separated list of allowed Discord user IDs",
     )
+    # Parsed set populated by model validator (private attr not from env)
+    _allowed_user_ids_set: set[int] = PrivateAttr(default_factory=set)
 
     # AI Model settings
     claude_api_key: str | None = Field(
@@ -110,27 +112,18 @@ class Settings(BaseSettings):
 
     @field_validator("allowed_user_ids", mode="before")
     @classmethod
-    def parse_allowed_user_ids(cls, v: str | set[int] | list[int] | None) -> set[int]:
-        """Parse comma-separated user IDs into a set."""
+    def filter_placeholder_allowed_user_ids(cls, v: str | None) -> str:
+        """Filter out placeholder values and comments from allowed_user_ids."""
         if v is None:
-            return set()
-        if isinstance(v, set):
-            return v
-        if isinstance(v, list):
-            return set(v)
-        if isinstance(v, str):
-            if not v or v == "your_discord_user_id_here":
-                return set()
-            result = set()
-            for id_str in v.split(","):
-                id_str = id_str.strip()
-                if id_str:
-                    try:
-                        result.add(int(id_str))
-                    except ValueError:
-                        pass  # Skip invalid IDs
-            return result
-        return set()
+            return ""
+        # Strip inline comments
+        if "#" in v:
+            v = v.split("#")[0]
+        v = v.strip()
+        # Filter placeholder
+        if v == "your_discord_user_id_here":
+            return ""
+        return v
 
     @field_validator("log_level", mode="after")
     @classmethod
@@ -182,9 +175,21 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def ensure_primary_user_in_allowlist(self) -> Settings:
-        """Ensure primary user is always in the allowlist."""
-        self.allowed_user_ids.add(self.discord_user_id)
+    def parse_and_validate_allowlist(self) -> Settings:
+        """Parse allowed_user_ids string and ensure primary user is included."""
+        # Parse comma-separated IDs
+        parsed: set[int] = set()
+        if self.allowed_user_ids:
+            for id_str in self.allowed_user_ids.split(","):
+                id_str = id_str.strip()
+                if id_str:
+                    try:
+                        parsed.add(int(id_str))
+                    except ValueError:
+                        pass  # Skip invalid IDs
+        # Always include primary user
+        parsed.add(self.discord_user_id)
+        self._allowed_user_ids_set = parsed
         return self
 
     @property
@@ -206,7 +211,7 @@ class Settings(BaseSettings):
         Returns:
             True if user is allowed to interact with the bot.
         """
-        return user_id in self.allowed_user_ids
+        return user_id in self._allowed_user_ids_set
 
 
 @lru_cache

@@ -8,15 +8,55 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 from agents.config import DEFAULT_AGENT_CONFIG, AgentConfig
-from agents.models import Message, ModelProvider, Response, Role, ToolResult, ToolUse
+from agents.models import (
+    Message,
+    ModelProvider,
+    Response,
+    Role,
+    ToolDefinition,
+    ToolResult,
+    ToolUse,
+)
 
 if TYPE_CHECKING:
     from agents.mcp import MCPClientManager
 
 logger = logging.getLogger(__name__)
+
+
+class NativeToolExecutor(Protocol):
+    """Protocol for native tool executors.
+
+    Native tools are executed directly in-process rather than via MCP.
+    This allows tools like Vault operations to run without subprocess overhead.
+    """
+
+    def can_handle(self, tool_name: str) -> bool:
+        """Check if this executor handles a tool.
+
+        Args:
+            tool_name: Name of the tool to check.
+
+        Returns:
+            True if this executor can handle the tool.
+        """
+        ...
+
+    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        """Execute a tool and return the result.
+
+        Args:
+            tool_name: Name of the tool to execute.
+            arguments: Tool arguments.
+
+        Returns:
+            Tool execution result as a string.
+        """
+        ...
+
 
 # Default system prompt for Erebus
 DEFAULT_SYSTEM_PROMPT = """You are Erebus, a personal AI assistant that operates through Discord.
@@ -33,16 +73,19 @@ Guidelines:
 - If asked about capabilities you don't have, be honest about limitations
 - Use your available tools when they would help answer the user's question
 - When using Todoist tools, be helpful with task management
+- When using vault tools, help manage notes and ideas in Obsidian
 
 Safety guidelines for destructive operations:
 - Before completing a task (todoist_close_task), state which task you will mark done and ask for confirmation
 - Before deleting a task (todoist_delete_task), always ask for explicit confirmation with task details
 - When multiple tasks could match a request, list the matching tasks and ask which one
 - Wait for an affirmative response (e.g., "yes", "do it", task name) before executing destructive operations
+- Before overwriting an existing note (vault_write_note with overwrite=true), confirm with the user
 
 Current capabilities:
 - Natural conversation and questions
 - Todoist task management (when configured)
+- Obsidian vault operations: read/write notes, search, daily notes, templates (when configured)
 """
 
 # Maximum messages to retain in conversation history
@@ -121,13 +164,15 @@ class ConversationManager:
     """Manages conversations across multiple users.
 
     Handles conversation state, model interaction, and history management.
-    Supports MCP tool integration for extended capabilities.
+    Supports both MCP tool integration and native tools for extended capabilities.
 
     Attributes:
         model: The model provider to use for completions.
         mcp: Optional MCP client manager for tool access.
         config: Agent configuration for behavior settings.
         conversations: Active conversations by user ID.
+        native_tools: Tool definitions for native (non-MCP) tools.
+        native_executors: Executors for native tools.
     """
 
     def __init__(
@@ -147,6 +192,54 @@ class ConversationManager:
         self.mcp = mcp
         self.config = config or DEFAULT_AGENT_CONFIG
         self.conversations: dict[int, Conversation] = {}
+        self._native_tools: list[ToolDefinition] = []
+        self._native_executors: list[NativeToolExecutor] = []
+
+    def register_native_tools(
+        self,
+        tools: list[ToolDefinition],
+        executor: NativeToolExecutor,
+    ) -> None:
+        """Register native tools with an executor.
+
+        Native tools are executed in-process rather than via MCP.
+        This is useful for tools like vault operations that don't need
+        subprocess isolation.
+
+        Note: Native tools take priority over MCP tools with the same name.
+        If multiple executors can handle the same tool, the first registered
+        executor will be used.
+
+        Args:
+            tools: Tool definitions to register.
+            executor: Executor that handles these tools.
+
+        Raises:
+            ValueError: If a tool name conflicts with existing native tools.
+        """
+        # Check for conflicts with existing native tools
+        existing_names = {t.name for t in self._native_tools}
+        new_names = {t.name for t in tools}
+        conflicts = existing_names & new_names
+        if conflicts:
+            raise ValueError(
+                f"Tool name collision detected: {conflicts}. "
+                "Each tool name must be unique across all native tools."
+            )
+
+        # Warn about MCP conflicts (native tools will shadow them)
+        if self.mcp:
+            mcp_names = {t.name for t in self.mcp.get_all_tools()}
+            mcp_conflicts = new_names & mcp_names
+            if mcp_conflicts:
+                logger.warning(
+                    f"Native tools will shadow MCP tools with same names: {mcp_conflicts}"
+                )
+
+        self._native_tools.extend(tools)
+        self._native_executors.append(executor)
+        tool_names = [t.name for t in tools]
+        logger.info(f"Registered {len(tools)} native tool(s): {tool_names}")
 
     def get_conversation(self, user_id: int) -> Conversation:
         """Get or create a conversation for a user.
@@ -162,12 +255,29 @@ class ConversationManager:
             logger.info(f"Created new conversation for user {user_id}")
         return self.conversations[user_id]
 
+    def _get_all_tools(self) -> list[ToolDefinition] | None:
+        """Get all available tools (MCP + native).
+
+        Returns:
+            Combined list of tool definitions, or None if no tools available.
+        """
+        tools: list[ToolDefinition] = []
+
+        # Add MCP tools
+        if self.mcp:
+            tools.extend(self.mcp.get_all_tools())
+
+        # Add native tools
+        tools.extend(self._native_tools)
+
+        return tools if tools else None
+
     async def chat(self, user_id: int, message: str) -> Response:
         """Send a message and get a response.
 
         Implements an agent loop that handles tool calls:
         1. Send message to model with available tools
-        2. If model requests tool use, execute tools via MCP
+        2. If model requests tool use, execute tools (native or MCP)
         3. Send tool results back to model
         4. Repeat until model returns final response
 
@@ -184,8 +294,9 @@ class ConversationManager:
         conversation = self.get_conversation(user_id)
         conversation.add_user_message(message)
 
-        # Get available tools from MCP
-        tools = self.mcp.get_all_tools() if self.mcp else None
+        # Get all available tools (MCP + native)
+        tools = self._get_all_tools()
+        has_tools = bool(tools)
 
         # Agent loop - handle tool calls until we get a final response
         total_input_tokens = 0
@@ -211,13 +322,13 @@ class ConversationManager:
                 break
 
             # Execute tool calls
-            if self.mcp:
+            if has_tools:
                 tool_results = await self._execute_tools(response.tool_uses)
                 conversation.add_tool_results(tool_results)
                 logger.debug(f"Executed {len(tool_results)} tool(s), continuing agent loop")
             else:
-                # No MCP available but model requested tools - shouldn't happen
-                logger.warning("Model requested tool use but no MCP client available")
+                # No tools available but model requested them - shouldn't happen
+                logger.warning("Model requested tool use but no tools available")
                 break
         else:
             logger.warning(
@@ -235,31 +346,23 @@ class ConversationManager:
         return response
 
     async def _execute_tools(self, tool_uses: list[ToolUse]) -> list[ToolResult]:
-        """Execute tool calls via MCP.
+        """Execute tool calls via native executors or MCP.
+
+        Routes each tool call to the appropriate executor:
+        1. First checks if any native executor can handle the tool
+        2. Falls back to MCP if no native executor handles it
 
         Args:
             tool_uses: List of tool use requests from the model.
 
         Returns:
             List of tool results.
-
-        Raises:
-            RuntimeError: If MCP client is not available.
         """
-        if self.mcp is None:
-            raise RuntimeError("Cannot execute tools: MCP client not available")
-
         results: list[ToolResult] = []
 
         for tool_use in tool_uses:
             try:
-                result_content = await asyncio.wait_for(
-                    self.mcp.call_tool(
-                        tool_name=tool_use.name,
-                        arguments=tool_use.input,
-                    ),
-                    timeout=self.config.tool_call_timeout,
-                )
+                result_content = await self._execute_single_tool(tool_use)
                 results.append(
                     ToolResult(
                         tool_use_id=tool_use.id,
@@ -280,6 +383,38 @@ class ConversationManager:
                 )
 
         return results
+
+    async def _execute_single_tool(self, tool_use: ToolUse) -> str:
+        """Execute a single tool call.
+
+        Args:
+            tool_use: The tool use request from the model.
+
+        Returns:
+            Tool execution result as a string.
+
+        Raises:
+            RuntimeError: If no executor can handle the tool.
+        """
+        # Check native executors first
+        for executor in self._native_executors:
+            if executor.can_handle(tool_use.name):
+                return await asyncio.wait_for(
+                    executor.execute(tool_use.name, tool_use.input),
+                    timeout=self.config.tool_call_timeout,
+                )
+
+        # Fall back to MCP
+        if self.mcp is not None:
+            return await asyncio.wait_for(
+                self.mcp.call_tool(
+                    tool_name=tool_use.name,
+                    arguments=tool_use.input,
+                ),
+                timeout=self.config.tool_call_timeout,
+            )
+
+        raise RuntimeError(f"No executor found for tool: {tool_use.name}")
 
     def clear_conversation(self, user_id: int) -> bool:
         """Clear a user's conversation history.

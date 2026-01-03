@@ -277,5 +277,9 @@ def create_todoist_config(api_key: str) -> MCPServerConfig:
         name="todoist",
         command="npx",
         args=["@doist/todoist-ai"],
-        env={"TODOIST_API_KEY": api_key},
+        env={
+            "TODOIST_API_KEY": api_key,
+            # Suppress dotenv debug output that interferes with JSONRPC
+            "DOTENV_CONFIG_QUIET": "true",
+        },
     )

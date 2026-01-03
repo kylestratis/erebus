@@ -22,6 +22,13 @@ from agents import (
     RateLimitError,
     create_todoist_config,
 )
+from agents.vault import (
+    Vault,
+    VaultConfig,
+    VaultError,
+    VaultToolExecutor,
+    get_vault_tool_definitions,
+)
 
 if TYPE_CHECKING:
     from bot.config import Settings
@@ -69,6 +76,7 @@ class ErebusBot(commands.Bot):
         self.start_time: datetime | None = None
         self.conversation_manager: ConversationManager | None = None
         self.mcp: MCPClientManager | None = None
+        self.vault: Vault | None = None
         self._model: AnthropicProvider | None = None
 
         # Initialize AI model if API key is available
@@ -102,6 +110,9 @@ class ErebusBot(commands.Bot):
                 mcp=self.mcp,
             )
             logger.info("Initialized conversation manager")
+
+            # Initialize vault and register tools
+            self._setup_vault()
 
         # Sync commands
         if self.config.discord_guild_id:
@@ -137,13 +148,45 @@ class ErebusBot(commands.Bot):
             # Continue without MCP - AI will work but without tools
             self.mcp = None
 
+    def _setup_vault(self) -> None:
+        """Initialize Obsidian vault and register tools with conversation manager.
+
+        Requires conversation_manager to be initialized first.
+        """
+        if not self.config.obsidian_vault_path:
+            logger.info("Vault not configured (OBSIDIAN_VAULT_PATH not set)")
+            return
+
+        if not self.conversation_manager:
+            logger.warning("Cannot setup vault: conversation_manager not initialized")
+            return
+
+        try:
+            vault_config = VaultConfig.from_settings(self.config)
+            self.vault = Vault(vault_config)
+
+            # Register vault tools with conversation manager
+            tool_definitions = get_vault_tool_definitions()
+            executor = VaultToolExecutor(self.vault)
+            self.conversation_manager.register_native_tools(tool_definitions, executor)
+
+            logger.info(f"Initialized vault at {self.config.obsidian_vault_path}")
+
+        except VaultError as e:
+            logger.error(f"Vault configuration error: {e}. Check OBSIDIAN_VAULT_PATH.")
+            self.vault = None
+
+        except Exception as e:
+            logger.exception(f"Failed to initialize vault: {e}")
+            self.vault = None
+
     async def on_ready(self) -> None:
         """Called when the bot is ready and connected."""
         self.start_time = datetime.now(UTC)
 
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info(f"Connected to {len(self.guilds)} guild(s)")
-        logger.info(f"Allowed users: {self.config.allowed_user_ids}")
+        logger.info(f"Allowed users: {self.config._allowed_user_ids_set}")
 
         # Set presence
         await self.change_presence(

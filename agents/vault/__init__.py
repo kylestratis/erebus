@@ -3,6 +3,7 @@
 Provides direct file operations for Obsidian vaults with template support.
 """
 
+from agents.vault.tools import VaultToolExecutor, get_vault_tool_definitions
 from agents.vault.vault import (
     NoteMetadata,
     NoteNotFoundError,
@@ -25,4 +26,6 @@ __all__ = [
     "Vault",
     "VaultConfig",
     "VaultError",
+    "VaultToolExecutor",
+    "get_vault_tool_definitions",
 ]
