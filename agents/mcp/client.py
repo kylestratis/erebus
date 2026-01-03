@@ -212,6 +212,18 @@ class MCPClientManager:
             return []
         return self._connections[server_name].tools
 
+    def can_handle_tool(self, tool_name: str) -> bool:
+        """Check if any connected server can handle a tool.
+
+        Args:
+            tool_name: Full tool name including server prefix.
+
+        Returns:
+            True if a connected server has this tool registered.
+        """
+        all_tool_names = {t.name for t in self.get_all_tools()}
+        return tool_name in all_tool_names
+
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """Call a tool on the appropriate MCP server.
 

@@ -404,8 +404,8 @@ class ConversationManager:
                     timeout=self.config.tool_call_timeout,
                 )
 
-        # Fall back to MCP
-        if self.mcp is not None:
+        # Check if MCP can handle the tool before calling
+        if self.mcp is not None and self.mcp.can_handle_tool(tool_use.name):
             return await asyncio.wait_for(
                 self.mcp.call_tool(
                     tool_name=tool_use.name,
@@ -414,7 +414,15 @@ class ConversationManager:
                 timeout=self.config.tool_call_timeout,
             )
 
-        raise RuntimeError(f"No executor found for tool: {tool_use.name}")
+        # Build helpful error message listing available tools
+        available_tools: list[str] = []
+        available_tools.extend(t.name for t in self._native_tools)
+        if self.mcp:
+            available_tools.extend(t.name for t in self.mcp.get_all_tools())
+
+        raise RuntimeError(
+            f"Unknown tool: '{tool_use.name}'. Available tools: {sorted(available_tools)}"
+        )
 
     def clear_conversation(self, user_id: int) -> bool:
         """Clear a user's conversation history.

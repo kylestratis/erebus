@@ -86,6 +86,28 @@ def get_vault_tool_definitions() -> list[ToolDefinition]:
             },
         ),
         ToolDefinition(
+            name="vault_delete_note",
+            description=(
+                "Delete a note from the Obsidian vault. "
+                "IMPORTANT: This is a destructive operation. Before deleting, "
+                "always confirm with the user by stating the note path and asking for confirmation. "
+                "Only proceed after receiving explicit approval."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "Relative path to the note to delete "
+                            "(e.g., 'Ideas/old-idea.md'). The .md extension is optional."
+                        ),
+                    },
+                },
+                "required": ["path"],
+            },
+        ),
+        ToolDefinition(
             name="vault_search_notes",
             description=(
                 "Search for text across notes in the vault. "
@@ -117,9 +139,9 @@ def get_vault_tool_definitions() -> list[ToolDefinition]:
         ToolDefinition(
             name="vault_list_notes",
             description=(
-                "List notes in a directory of the vault. "
+                "List notes (markdown files) in a directory of the vault. "
                 "Returns note names, paths, and last modified dates. "
-                "Use this to explore vault structure or find recent notes."
+                "Only lists files in the immediate directory, not subdirectories."
             ),
             input_schema={
                 "type": "object",
@@ -127,8 +149,30 @@ def get_vault_tool_definitions() -> list[ToolDefinition]:
                     "directory": {
                         "type": "string",
                         "description": (
-                            "Directory to list (e.g., 'Ideas' or 'Daily Notes'). "
+                            "Full path to directory (e.g., 'Bins/Evergreen Notes'). "
+                            "Use vault_list_directories first to explore the vault structure. "
                             "Lists vault root if omitted."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        ),
+        ToolDefinition(
+            name="vault_list_directories",
+            description=(
+                "List subdirectories in a vault directory. "
+                "Use this to explore the vault structure and find the correct paths "
+                "before searching or listing notes. Returns full paths from vault root."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": (
+                            "Directory to list subdirectories of (e.g., 'Bins' or 'Spaces'). "
+                            "Lists vault root directories if omitted."
                         ),
                     },
                 },
@@ -208,8 +252,10 @@ class VaultToolExecutor:
         self._handlers: dict[str, Callable[..., Coroutine[Any, Any, str]]] = {
             "vault_read_note": self._handle_read_note,
             "vault_write_note": self._handle_write_note,
+            "vault_delete_note": self._handle_delete_note,
             "vault_search_notes": self._handle_search_notes,
             "vault_list_notes": self._handle_list_notes,
+            "vault_list_directories": self._handle_list_directories,
             "vault_get_daily_note": self._handle_get_daily_note,
             "vault_create_daily_note": self._handle_create_daily_note,
             "vault_list_templates": self._handle_list_templates,
@@ -272,6 +318,14 @@ class VaultToolExecutor:
         except Exception as e:
             return f"Error writing note: {e}"
 
+    async def _handle_delete_note(self, path: str) -> str:
+        """Handle vault_delete_note tool call."""
+        try:
+            self.vault.delete_note(path)
+            return f"Successfully deleted note: {path}"
+        except Exception as e:
+            return f"Error deleting note: {e}"
+
     async def _handle_search_notes(
         self,
         query: str,
@@ -312,6 +366,22 @@ class VaultToolExecutor:
             return "\n".join(lines)
         except Exception as e:
             return f"Error listing notes: {e}"
+
+    async def _handle_list_directories(self, directory: str = "") -> str:
+        """Handle vault_list_directories tool call."""
+        try:
+            directories = self.vault.list_directories(directory=directory)
+            if not directories:
+                loc = f"'{directory}'" if directory else "vault root"
+                return f"No subdirectories in {loc}"
+
+            loc = f"'{directory}'" if directory else "vault root"
+            lines = [f"Subdirectories in {loc} ({len(directories)} total):\n"]
+            for path in directories:
+                lines.append(f"- {path}")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error listing directories: {e}"
 
     async def _handle_get_daily_note(self, date: str | None = None) -> str:
         """Handle vault_get_daily_note tool call."""

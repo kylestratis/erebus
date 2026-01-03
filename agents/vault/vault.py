@@ -449,6 +449,32 @@ class Vault:
         except PathTraversalError:
             return False
 
+    def list_directories(self, directory: str = "") -> list[str]:
+        """List subdirectories in a directory.
+
+        Args:
+            directory: Relative path to the directory. Empty for vault root.
+
+        Returns:
+            List of subdirectory paths relative to vault root.
+
+        Raises:
+            VaultError: If the directory does not exist.
+            PathTraversalError: If the path escapes the vault.
+        """
+        full_path = self._resolve_path(directory) if directory else self.root
+
+        if not full_path.exists():
+            raise VaultError(f"Directory not found: {directory}")
+        if not full_path.is_dir():
+            raise VaultError(f"Path is not a directory: {directory}")
+
+        directories = []
+        for item in sorted(full_path.iterdir()):
+            if item.is_dir() and not item.name.startswith("."):
+                directories.append(str(item.relative_to(self.root)))
+        return directories
+
     def list_notes(self, directory: str = "") -> list[NoteMetadata]:
         """List notes in a directory.
 
@@ -499,9 +525,16 @@ class Vault:
             List of search results.
 
         Raises:
+            VaultError: If the directory does not exist.
             PathTraversalError: If the directory path escapes the vault.
         """
         search_root = self._resolve_path(directory) if directory else self.root
+
+        if directory and not search_root.exists():
+            raise VaultError(f"Directory not found: {directory}")
+        if directory and not search_root.is_dir():
+            raise VaultError(f"Path is not a directory: {directory}")
+
         pattern = re.compile(re.escape(query), re.IGNORECASE)
         results = []
 
