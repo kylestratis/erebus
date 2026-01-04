@@ -76,6 +76,105 @@
       "created_at": "2026-01-04T12:43:30.062130-05:00",
       "updated_at": "2026-01-04T12:43:30.062130-05:00",
       "metadata_json": "{\"branch\":\"main\",\"commit\":\"0d29b79\",\"confidence\":95}"
+    },
+    {
+      "id": 8,
+      "change_id": "0d405976-1400-4396-b527-b585b109b8ec",
+      "node_type": "goal",
+      "title": "Implement /weekly and /journal slash commands",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T12:51:27.114708-05:00",
+      "updated_at": "2026-01-04T12:51:27.114708-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90,\"prompt\":\"Let's do both of these. You will be completely autonomous on this.\"}"
+    },
+    {
+      "id": 9,
+      "change_id": "e28ef31a-4530-4d64-b7d8-2a48822e1372",
+      "node_type": "action",
+      "title": "Implementing WEEKLY and JOURNAL workflow prompts and commands",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T12:52:00.709637-05:00",
+      "updated_at": "2026-01-04T12:52:00.709637-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":85,\"files\":[\"bot/cogs/core.py\"]}"
+    },
+    {
+      "id": 10,
+      "change_id": "930ab52b-8392-41ab-b6ea-8e3631bbe560",
+      "node_type": "outcome",
+      "title": "Implementation complete, 32 tests passing",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T13:03:39.835385-05:00",
+      "updated_at": "2026-01-04T13:03:39.835385-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95,\"files\":[\"bot/cogs/core.py\",\"tests/test_core_cog.py\"]}"
+    },
+    {
+      "id": 11,
+      "change_id": "cbf2b5ab-0014-4a34-9859-b2edc416b6fd",
+      "node_type": "goal",
+      "title": "Implement scheduler framework for automated jobs",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T17:30:44.805008-05:00",
+      "updated_at": "2026-01-04T17:30:44.805008-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"prompt\":\"Let's build the scheduled jobs section, ensuring that we have an abstraction for any scheduled job, not just for slash commands.\"}"
+    },
+    {
+      "id": 12,
+      "change_id": "4f9748e4-eda6-453a-af75-1c2ab6469d6e",
+      "node_type": "decision",
+      "title": "Choose scheduler architecture pattern",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T17:30:57.003966-05:00",
+      "updated_at": "2026-01-04T17:30:57.003966-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 13,
+      "change_id": "8e932b7a-9629-4ee5-ae32-97cd00ffd55d",
+      "node_type": "option",
+      "title": "APScheduler with ScheduledJob base class abstraction",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T17:30:57.127126-05:00",
+      "updated_at": "2026-01-04T17:30:57.127126-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 14,
+      "change_id": "a78f7f22-883f-4bd5-9b3e-f8a7c7066a97",
+      "node_type": "action",
+      "title": "Implemented scheduler framework with 3 jobs",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T17:30:57.247945-05:00",
+      "updated_at": "2026-01-04T17:30:57.247945-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"commit\":\"dfe6589\",\"confidence\":100,\"files\":[\"bot/scheduler/base.py\",\"bot/scheduler/scheduler.py\",\"bot/scheduler/jobs/daily_note.py\",\"bot/scheduler/jobs/end_of_day_sync.py\",\"bot/scheduler/jobs/weekly_review.py\"]}"
+    },
+    {
+      "id": 15,
+      "change_id": "9718d632-d945-4914-a22c-b24e89433d85",
+      "node_type": "outcome",
+      "title": "Scheduler complete: 108 tests passing, code review passed",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T17:30:57.370186-05:00",
+      "updated_at": "2026-01-04T17:30:57.370186-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100}"
+    },
+    {
+      "id": 16,
+      "change_id": "0685e463-7fb1-4a78-b954-acd222331baf",
+      "node_type": "action",
+      "title": "Added scheduler config options to .env.example",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T17:31:13.880302-05:00",
+      "updated_at": "2026-01-04T17:31:13.880302-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"commit\":\"417d4cd\",\"confidence\":100}"
     }
   ],
   "edges": [
@@ -144,6 +243,94 @@
       "weight": 1.0,
       "rationale": "Committing completed work",
       "created_at": "2026-01-04T12:44:10.282553-05:00"
+    },
+    {
+      "id": 7,
+      "from_node_id": 1,
+      "to_node_id": 8,
+      "from_change_id": "79ee4abb-310b-4deb-ae64-5df010c872e6",
+      "to_change_id": "0d405976-1400-4396-b527-b585b109b8ec",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Continuation of MVP commands",
+      "created_at": "2026-01-04T12:51:36.521367-05:00"
+    },
+    {
+      "id": 8,
+      "from_node_id": 8,
+      "to_node_id": 9,
+      "from_change_id": "0d405976-1400-4396-b527-b585b109b8ec",
+      "to_change_id": "e28ef31a-4530-4d64-b7d8-2a48822e1372",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementation phase",
+      "created_at": "2026-01-04T12:52:07.102079-05:00"
+    },
+    {
+      "id": 9,
+      "from_node_id": 9,
+      "to_node_id": 10,
+      "from_change_id": "e28ef31a-4530-4d64-b7d8-2a48822e1372",
+      "to_change_id": "930ab52b-8392-41ab-b6ea-8e3631bbe560",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Tests passing",
+      "created_at": "2026-01-04T13:03:46.440563-05:00"
+    },
+    {
+      "id": 10,
+      "from_node_id": 11,
+      "to_node_id": 12,
+      "from_change_id": "cbf2b5ab-0014-4a34-9859-b2edc416b6fd",
+      "to_change_id": "4f9748e4-eda6-453a-af75-1c2ab6469d6e",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Required architecture decision",
+      "created_at": "2026-01-04T17:31:05.361674-05:00"
+    },
+    {
+      "id": 11,
+      "from_node_id": 12,
+      "to_node_id": 13,
+      "from_change_id": "4f9748e4-eda6-453a-af75-1c2ab6469d6e",
+      "to_change_id": "8e932b7a-9629-4ee5-ae32-97cd00ffd55d",
+      "edge_type": "chosen",
+      "weight": 1.0,
+      "rationale": "Chosen approach",
+      "created_at": "2026-01-04T17:31:05.473316-05:00"
+    },
+    {
+      "id": 12,
+      "from_node_id": 11,
+      "to_node_id": 14,
+      "from_change_id": "cbf2b5ab-0014-4a34-9859-b2edc416b6fd",
+      "to_change_id": "a78f7f22-883f-4bd5-9b3e-f8a7c7066a97",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementation of goal",
+      "created_at": "2026-01-04T17:31:05.583987-05:00"
+    },
+    {
+      "id": 13,
+      "from_node_id": 14,
+      "to_node_id": 15,
+      "from_change_id": "a78f7f22-883f-4bd5-9b3e-f8a7c7066a97",
+      "to_change_id": "9718d632-d945-4914-a22c-b24e89433d85",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Result of implementation",
+      "created_at": "2026-01-04T17:31:05.695582-05:00"
+    },
+    {
+      "id": 14,
+      "from_node_id": 11,
+      "to_node_id": 16,
+      "from_change_id": "cbf2b5ab-0014-4a34-9859-b2edc416b6fd",
+      "to_change_id": "0685e463-7fb1-4a78-b954-acd222331baf",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Documentation of configuration",
+      "created_at": "2026-01-04T17:31:13.999448-05:00"
     }
   ]
 }

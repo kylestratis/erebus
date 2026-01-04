@@ -1,5 +1,21 @@
 [
   {
+    "hash": "417d4cd4c2fe0421dbad93bc681543b106154041",
+    "short_hash": "417d4cd",
+    "author": "Kyle Stratis",
+    "date": "2026-01-04T17:30:17-05:00",
+    "message": "Add scheduler configuration options to .env.example\n\nDocuments all new environment variables for the scheduler: SCHEDULER_ENABLED, SCHEDULER_TIMEZONE, and per-job ENABLED/CRON settings for daily note, end-of-day sync, and weekly review jobs.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+    "files_changed": 1
+  },
+  {
+    "hash": "dfe6589c1144f927276dd1f89a53f68d91df36c9",
+    "short_hash": "dfe6589",
+    "author": "Kyle Stratis",
+    "date": "2026-01-04T17:28:34-05:00",
+    "message": "Add scheduler framework for automated jobs\n\n- Create bot/scheduler/ module with ScheduledJob abstraction\n- Implement APScheduler-based Scheduler class with cron scheduling\n- Add 3 scheduled jobs:\n  - DailyNoteJob: 6am daily note generation + morning briefing DM\n  - EndOfDaySyncJob: 11:55pm bidirectional sync + rollover + summary DM\n  - WeeklyReviewJob: Sunday 6pm review reminder DM\n- Add scheduler configuration to Settings (timezone, cron expressions, toggles)\n- Integrate scheduler with ErebusBot lifecycle (start/stop)\n- Add cron expression validation at config load time\n- Fix exception handling to catch specific JobLookupError\n- Remove unused python-crontab dependency, pin apscheduler <4.0.0\n- Comprehensive test coverage (36 new tests, 108 total passing)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+    "files_changed": 12
+  },
+  {
     "hash": "0d29b796e186092b850572749fbfe443ca4d56a1",
     "short_hash": "0d29b79",
     "author": "Kyle Stratis",
