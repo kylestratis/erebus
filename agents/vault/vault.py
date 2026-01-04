@@ -63,38 +63,36 @@ def _obsidian_to_strftime(obsidian_format: str) -> str:
     Returns:
         Python strftime format string.
     """
-    # Order matters: longer tokens must be replaced before shorter ones
-    # to avoid partial replacements (e.g., MMMM before MMM before MM before M)
-    replacements = [
-        # Year tokens
-        ("YYYY", "%Y"),
-        ("YY", "%y"),
-        # Month tokens (longest first)
-        ("MMMM", "%B"),
-        ("MMM", "%b"),
-        ("MM", "%m"),
-        ("M", "%-m"),
-        # Day tokens (longest first)
-        ("DD", "%d"),
-        ("D", "%-d"),
-        # Weekday tokens (longest first)
-        ("dddd", "%A"),
-        ("ddd", "%a"),
-        ("dd", "%a"),  # strftime doesn't have 2-letter weekday, use abbreviated
-        # Time tokens
-        ("HH", "%H"),
-        ("hh", "%I"),
-        ("mm", "%M"),
-        ("ss", "%S"),
-        ("A", "%p"),
-        ("a", "%p"),  # Use %p for both; %P is not portable
-    ]
+    # Map of Obsidian tokens to strftime tokens
+    token_map = {
+        "YYYY": "%Y",
+        "YY": "%y",
+        "MMMM": "%B",
+        "MMM": "%b",
+        "MM": "%m",
+        "M": "%-m",
+        "DD": "%d",
+        "D": "%-d",
+        "dddd": "%A",
+        "ddd": "%a",
+        "dd": "%a",  # strftime doesn't have 2-letter weekday, use abbreviated
+        "HH": "%H",
+        "hh": "%I",
+        "mm": "%M",
+        "ss": "%S",
+        "A": "%p",
+        "a": "%p",  # Use %p for both; %P is not portable
+    }
 
-    result = obsidian_format
-    for obsidian_token, strftime_token in replacements:
-        result = result.replace(obsidian_token, strftime_token)
+    # Build regex pattern matching all tokens, longest first to avoid partial matches
+    # Sort by length descending so "MMMM" matches before "MM", "dddd" before "dd", etc.
+    sorted_tokens = sorted(token_map.keys(), key=len, reverse=True)
+    pattern = re.compile("|".join(re.escape(token) for token in sorted_tokens))
 
-    return result
+    def replace_token(match: re.Match[str]) -> str:
+        return token_map[match.group(0)]
+
+    return pattern.sub(replace_token, obsidian_format)
 
 
 @dataclass
