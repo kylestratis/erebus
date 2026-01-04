@@ -1,1 +1,149 @@
-{"nodes":[],"edges":[]}
+{
+  "nodes": [
+    {
+      "id": 1,
+      "change_id": "79ee4abb-310b-4deb-ae64-5df010c872e6",
+      "node_type": "goal",
+      "title": "Implement /sync slash command",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T11:51:28.028893-05:00",
+      "updated_at": "2026-01-04T11:51:28.028893-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":85,\"prompt\":\"What is next on the implementation list?\\n...\\nLet's go with option 1. Begin using deciduous now.\"}"
+    },
+    {
+      "id": 2,
+      "change_id": "0c5ed63d-921e-436c-b4bd-9440041d3198",
+      "node_type": "observation",
+      "title": "Reading /sync command requirements from implementation plan",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T11:51:46.009300-05:00",
+      "updated_at": "2026-01-04T11:51:46.009300-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 3,
+      "change_id": "ce681641-49b1-49ba-bd80-1ddf69679a6f",
+      "node_type": "decision",
+      "title": "Choose /sync implementation approach",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T12:12:19.170344-05:00",
+      "updated_at": "2026-01-04T12:12:19.170344-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":85}"
+    },
+    {
+      "id": 4,
+      "change_id": "4b7bcb5d-c9ef-4d61-b0f5-5abb6bc64699",
+      "node_type": "option",
+      "title": "AI-driven workflow prompt (like /daily, /idea, /capture)",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T12:12:26.512691-05:00",
+      "updated_at": "2026-01-04T12:12:26.512691-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 5,
+      "change_id": "8081ae7c-e467-4d8b-969e-3a423232498b",
+      "node_type": "action",
+      "title": "Implementing SYNC_WORKFLOW_PROMPT and /sync command",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T12:12:34.278604-05:00",
+      "updated_at": "2026-01-04T12:12:34.278604-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":85,\"files\":[\"bot/cogs/core.py\"]}"
+    },
+    {
+      "id": 6,
+      "change_id": "29c94e63-e52f-4b8a-8031-025607b74051",
+      "node_type": "outcome",
+      "title": "Implementation complete, 21 tests passing",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T12:40:00.574046-05:00",
+      "updated_at": "2026-01-04T12:40:00.574046-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95,\"files\":[\"bot/cogs/core.py\",\"tests/test_core_cog.py\"]}"
+    },
+    {
+      "id": 7,
+      "change_id": "a0d3086d-730e-4b3e-98be-8fe0c4394bf7",
+      "node_type": "action",
+      "title": "Committing /sync implementation",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-04T12:43:30.062130-05:00",
+      "updated_at": "2026-01-04T12:43:30.062130-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"commit\":\"0d29b79\",\"confidence\":95}"
+    }
+  ],
+  "edges": [
+    {
+      "id": 1,
+      "from_node_id": 1,
+      "to_node_id": 2,
+      "from_change_id": "79ee4abb-310b-4deb-ae64-5df010c872e6",
+      "to_change_id": "0c5ed63d-921e-436c-b4bd-9440041d3198",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Research phase",
+      "created_at": "2026-01-04T11:56:06.073870-05:00"
+    },
+    {
+      "id": 2,
+      "from_node_id": 1,
+      "to_node_id": 3,
+      "from_change_id": "79ee4abb-310b-4deb-ae64-5df010c872e6",
+      "to_change_id": "ce681641-49b1-49ba-bd80-1ddf69679a6f",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Need to decide implementation approach",
+      "created_at": "2026-01-04T12:12:26.498814-05:00"
+    },
+    {
+      "id": 3,
+      "from_node_id": 3,
+      "to_node_id": 4,
+      "from_change_id": "ce681641-49b1-49ba-bd80-1ddf69679a6f",
+      "to_change_id": "4b7bcb5d-c9ef-4d61-b0f5-5abb6bc64699",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Option A",
+      "created_at": "2026-01-04T12:12:26.517604-05:00"
+    },
+    {
+      "id": 4,
+      "from_node_id": 4,
+      "to_node_id": 5,
+      "from_change_id": "4b7bcb5d-c9ef-4d61-b0f5-5abb6bc64699",
+      "to_change_id": "8081ae7c-e467-4d8b-969e-3a423232498b",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementing chosen approach",
+      "created_at": "2026-01-04T12:12:40.524674-05:00"
+    },
+    {
+      "id": 5,
+      "from_node_id": 5,
+      "to_node_id": 6,
+      "from_change_id": "8081ae7c-e467-4d8b-969e-3a423232498b",
+      "to_change_id": "29c94e63-e52f-4b8a-8031-025607b74051",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Tests passing",
+      "created_at": "2026-01-04T12:40:07.562930-05:00"
+    },
+    {
+      "id": 6,
+      "from_node_id": 6,
+      "to_node_id": 7,
+      "from_change_id": "29c94e63-e52f-4b8a-8031-025607b74051",
+      "to_change_id": "a0d3086d-730e-4b3e-98be-8fe0c4394bf7",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Committing completed work",
+      "created_at": "2026-01-04T12:44:10.282553-05:00"
+    }
+  ]
+}
