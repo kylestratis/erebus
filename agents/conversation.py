@@ -384,6 +384,49 @@ class ConversationManager:
 
         return results
 
+    def _normalize_tool_name(self, tool_name: str) -> str | None:
+        """Normalize a tool name to match registered tools.
+
+        MCP tools often use hyphens (e.g., 'todoist_find-tasks') but the model
+        may call them with underscores (e.g., 'todoist_find_tasks'). This method
+        tries to find a matching tool by converting between conventions.
+
+        Args:
+            tool_name: The tool name as called by the model.
+
+        Returns:
+            The normalized tool name if found, None otherwise.
+        """
+        # Build set of all available tool names
+        available_tools: set[str] = set()
+        available_tools.update(t.name for t in self._native_tools)
+        if self.mcp:
+            available_tools.update(t.name for t in self.mcp.get_all_tools())
+
+        # Exact match
+        if tool_name in available_tools:
+            return tool_name
+
+        # Try converting underscores to hyphens (after the prefix)
+        # e.g., "todoist_find_tasks" -> "todoist_find-tasks"
+        if "_" in tool_name:
+            # Split on first underscore to preserve the server prefix
+            parts = tool_name.split("_", 1)
+            if len(parts) == 2:
+                prefix, rest = parts
+                hyphenated = f"{prefix}_{rest.replace('_', '-')}"
+                if hyphenated in available_tools:
+                    return hyphenated
+
+        # Try converting hyphens to underscores (after the prefix)
+        # e.g., "todoist_find-tasks" -> "todoist_find_tasks"
+        if "-" in tool_name:
+            underscored = tool_name.replace("-", "_")
+            if underscored in available_tools:
+                return underscored
+
+        return None
+
     async def _execute_single_tool(self, tool_use: ToolUse) -> str:
         """Execute a single tool call.
 
@@ -396,33 +439,39 @@ class ConversationManager:
         Raises:
             RuntimeError: If no executor can handle the tool.
         """
+        # Normalize tool name to handle underscore/hyphen mismatches
+        normalized_name = self._normalize_tool_name(tool_use.name)
+        if normalized_name is None:
+            # Build helpful error message listing available tools
+            available_tools: list[str] = []
+            available_tools.extend(t.name for t in self._native_tools)
+            if self.mcp:
+                available_tools.extend(t.name for t in self.mcp.get_all_tools())
+
+            raise RuntimeError(
+                f"Unknown tool: '{tool_use.name}'. Available tools: {sorted(available_tools)}"
+            )
+
         # Check native executors first
         for executor in self._native_executors:
-            if executor.can_handle(tool_use.name):
+            if executor.can_handle(normalized_name):
                 return await asyncio.wait_for(
-                    executor.execute(tool_use.name, tool_use.input),
+                    executor.execute(normalized_name, tool_use.input),
                     timeout=self.config.tool_call_timeout,
                 )
 
-        # Check if MCP can handle the tool before calling
-        if self.mcp is not None and self.mcp.can_handle_tool(tool_use.name):
+        # Check if MCP can handle the tool
+        if self.mcp is not None and self.mcp.can_handle_tool(normalized_name):
             return await asyncio.wait_for(
                 self.mcp.call_tool(
-                    tool_name=tool_use.name,
+                    tool_name=normalized_name,
                     arguments=tool_use.input,
                 ),
                 timeout=self.config.tool_call_timeout,
             )
 
-        # Build helpful error message listing available tools
-        available_tools: list[str] = []
-        available_tools.extend(t.name for t in self._native_tools)
-        if self.mcp:
-            available_tools.extend(t.name for t in self.mcp.get_all_tools())
-
-        raise RuntimeError(
-            f"Unknown tool: '{tool_use.name}'. Available tools: {sorted(available_tools)}"
-        )
+        # This shouldn't happen since we normalized above, but handle gracefully
+        raise RuntimeError(f"Tool '{normalized_name}' passed normalization but no executor found")
 
     def clear_conversation(self, user_id: int) -> bool:
         """Clear a user's conversation history.
