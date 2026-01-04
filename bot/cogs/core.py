@@ -200,6 +200,86 @@ Mode: {mode}
 
 Keep responses concise. Todoist is the source of truth for task metadata."""
 
+# Weekly review workflow prompt
+WEEKLY_WORKFLOW_PROMPT = """Guide me through my weekly review.
+
+This should feel like a conversation with a trusted chief of staff helping me
+reflect on the week and plan ahead. Work through each phase conversationally.
+
+## Phase 1: Mechanical Review
+- Ask about key accomplishments and what got completed
+- What tasks remain incomplete? What got moved vs. archived?
+- Any upcoming hard deadlines to be aware of?
+
+## Phase 2: Emotional Reality Check
+Ask these questions one at a time, giving space to reflect:
+- What's causing the most unease right now?
+- What are you afraid of doing or avoiding?
+- What brought the most joy or energy this week?
+
+## Phase 3: Constraint Analysis
+Help identify real constraints vs. imagined ones:
+- Money: What's the real financial picture?
+- Time: What's actually locked in vs. self-imposed?
+- Energy: Where is energy being drained vs. gained?
+- What could be cut or eliminated?
+
+## Phase 4: Finding Unlocks
+Explore opportunities:
+- Who could help? What can be delegated or automated?
+- What's the 80/20 here? What would unlock everything else?
+- What if the opposite of current assumptions were true?
+
+## Phase 5: Energy-Aware Priorities for Next Week
+Help set priorities considering:
+- What MUST happen (external commitments)
+- What unlocks everything else
+- What maintains momentum
+- What preserves energy and sanity
+- Protected recharge time and power hours for deep work
+
+## Outputs
+After completing the review:
+1. Summarize key insights and decisions
+2. Create a weekly review log at `logs/weekly/YYYY-WW.md` using vault_write_note
+3. List the top 3-5 priorities for next week
+
+Keep the conversation flowing naturally. Don't rush through phases.
+Ask follow-up questions to dig deeper when needed."""
+
+# Journal entry workflow prompt
+JOURNAL_WORKFLOW_PROMPT = """Help me add a journal entry to today's daily note.
+
+{entry_context}
+
+## Steps:
+
+1. **Get today's daily note**
+   - Use vault_get_daily_note to fetch today's note
+   - If it doesn't exist, tell the user to run /daily first
+
+2. **Locate the Journal section**
+   - Find the `## Journal` section in the note
+   - If no entry text provided, ask: "What would you like to journal about?"
+
+3. **Create the entry**
+   - Format: `### HH:MM - [Optional Title]`
+   - Use current time in 24-hour format
+   - Add the journal content below the heading
+   - If the entry seems to have a natural title, use it; otherwise omit
+
+4. **Insert the entry**
+   - Add new entries at the TOP of the Journal section (reverse chronological)
+   - Keep the "Outside Journals" query section intact below entries
+   - Use vault_write_note to save the updated note (with overwrite=true)
+
+5. **Confirm**
+   - Show the timestamp
+   - Show the first line of content as confirmation
+   - Show the path to the daily note
+
+Keep it brief. If user provided entry text, add it directly without asking."""
+
 
 def is_allowed_user():
     """Check decorator that verifies user is in the whitelist."""
@@ -712,6 +792,179 @@ class CoreCog(commands.Cog, name="Core"):
                 "Something went wrong. Please try again later."
             )
 
+    @app_commands.command(
+        name="weekly",
+        description="Start a guided weekly review conversation",
+    )
+    @is_allowed_user()
+    @is_dm_channel()
+    async def weekly(self, interaction: discord.Interaction) -> None:
+        """Start a guided weekly review.
+
+        Guides the user through a 5-phase weekly review covering mechanical
+        review, emotional check-in, constraint analysis, finding unlocks,
+        and setting energy-aware priorities.
+
+        Args:
+            interaction: The Discord interaction.
+        """
+        if not self.bot.conversation_manager:
+            await interaction.response.send_message(
+                "*Erebus cannot guide a review without a voice...*\n\n"
+                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /weekly.",
+                ephemeral=True,
+            )
+            return
+
+        if not self.bot.vault:
+            await interaction.response.send_message(
+                "*Erebus has no vault to record the review...*\n\n"
+                "Vault not configured. Set `OBSIDIAN_VAULT_PATH` to use /weekly.",
+                ephemeral=True,
+            )
+            return
+
+        # Defer response since this workflow takes time
+        await interaction.response.defer(thinking=True)
+        logger.info(f"Weekly review started by {interaction.user}")
+
+        try:
+            response = await asyncio.wait_for(
+                self.bot.conversation_manager.chat(
+                    user_id=interaction.user.id,
+                    message=WEEKLY_WORKFLOW_PROMPT,
+                ),
+                timeout=WORKFLOW_TIMEOUT,
+            )
+
+            if response.content:
+                content = response.content.replace("\\`", "`")
+                await self._send_long_followup(interaction, content)
+            else:
+                await interaction.followup.send(
+                    "*Erebus tried to begin the review but lost focus...*\n\n"
+                    "Something went wrong. Please try again."
+                )
+
+            logger.info(f"Weekly review initiated for {interaction.user}")
+
+        except TimeoutError:
+            logger.error(f"Weekly review timed out for {interaction.user}")
+            await interaction.followup.send(
+                "The weekly review took too long. Please try again."
+            )
+
+        except RateLimitError as e:
+            logger.warning(f"Rate limited during weekly review: {e}")
+            retry_msg = f" Try again in {e.retry_after:.0f}s." if e.retry_after else ""
+            await interaction.followup.send(f"Rate limited by AI provider.{retry_msg}")
+
+        except ModelError as e:
+            logger.exception(f"Model error during weekly review: {e}")
+            await interaction.followup.send(
+                "An error occurred during the review. Please try again."
+            )
+
+        except Exception as e:
+            logger.exception(f"Unexpected error in weekly review: {e}")
+            await interaction.followup.send(
+                "Something went wrong. Please try again later."
+            )
+
+    @app_commands.command(
+        name="journal",
+        description="Add a journal entry to today's daily note",
+    )
+    @app_commands.describe(
+        entry="Optional: Your journal entry text (if omitted, you'll be asked)"
+    )
+    @is_allowed_user()
+    @is_dm_channel()
+    async def journal(
+        self,
+        interaction: discord.Interaction,
+        entry: str | None = None,
+    ) -> None:
+        """Add a journal entry to today's daily note.
+
+        Adds a timestamped journal entry to the Journal section of today's
+        daily note. If no entry text is provided, prompts for input.
+
+        Args:
+            interaction: The Discord interaction.
+            entry: Optional journal entry text.
+        """
+        if not self.bot.conversation_manager:
+            await interaction.response.send_message(
+                "*Erebus cannot journal without a voice...*\n\n"
+                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /journal.",
+                ephemeral=True,
+            )
+            return
+
+        if not self.bot.vault:
+            await interaction.response.send_message(
+                "*Erebus has no vault to write in...*\n\n"
+                "Vault not configured. Set `OBSIDIAN_VAULT_PATH` to use /journal.",
+                ephemeral=True,
+            )
+            return
+
+        # Defer response since this workflow takes time
+        await interaction.response.defer(thinking=True)
+
+        # Build context based on whether entry was provided
+        if entry:
+            entry_context = f'The user provided this entry:\n\n"{entry}"'
+            logger.info(f"Journal entry started by {interaction.user} (with text)")
+        else:
+            entry_context = "No entry text provided. Ask the user what they'd like to journal about."
+            logger.info(f"Journal entry started by {interaction.user} (interactive)")
+
+        try:
+            prompt = JOURNAL_WORKFLOW_PROMPT.format(entry_context=entry_context)
+            response = await asyncio.wait_for(
+                self.bot.conversation_manager.chat(
+                    user_id=interaction.user.id,
+                    message=prompt,
+                ),
+                timeout=WORKFLOW_TIMEOUT,
+            )
+
+            if response.content:
+                content = response.content.replace("\\`", "`")
+                await self._send_long_followup(interaction, content)
+            else:
+                await interaction.followup.send(
+                    "*Erebus tried to record your thoughts but they faded...*\n\n"
+                    "Something went wrong. Please try again."
+                )
+
+            logger.info(f"Journal entry completed for {interaction.user}")
+
+        except TimeoutError:
+            logger.error(f"Journal entry timed out for {interaction.user}")
+            await interaction.followup.send(
+                "The journal entry took too long. Please try again."
+            )
+
+        except RateLimitError as e:
+            logger.warning(f"Rate limited during journal entry: {e}")
+            retry_msg = f" Try again in {e.retry_after:.0f}s." if e.retry_after else ""
+            await interaction.followup.send(f"Rate limited by AI provider.{retry_msg}")
+
+        except ModelError as e:
+            logger.exception(f"Model error during journal entry: {e}")
+            await interaction.followup.send(
+                "An error occurred while journaling. Please try again."
+            )
+
+        except Exception as e:
+            logger.exception(f"Unexpected error in journal entry: {e}")
+            await interaction.followup.send(
+                "Something went wrong. Please try again later."
+            )
+
     async def _send_long_followup(
         self,
         interaction: discord.Interaction,
@@ -757,6 +1010,8 @@ class CoreCog(commands.Cog, name="Core"):
     @idea.error
     @capture.error
     @sync.error
+    @weekly.error
+    @journal.error
     async def command_error_handler(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ) -> None:

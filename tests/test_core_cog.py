@@ -8,7 +8,9 @@ from bot.cogs.core import (
     CAPTURE_WORKFLOW_PROMPT,
     DAILY_WORKFLOW_PROMPT,
     IDEA_WORKFLOW_PROMPT,
+    JOURNAL_WORKFLOW_PROMPT,
     SYNC_WORKFLOW_PROMPT,
+    WEEKLY_WORKFLOW_PROMPT,
 )
 
 
@@ -118,6 +120,67 @@ class TestWorkflowPrompts:
         assert "Summary" in SYNC_WORKFLOW_PROMPT or "summary" in SYNC_WORKFLOW_PROMPT
         assert "synced" in SYNC_WORKFLOW_PROMPT.lower()
 
+    # Weekly prompt tests
+    def test_weekly_prompt_contains_phases(self) -> None:
+        """Weekly prompt should contain all 5 review phases."""
+        assert "Phase 1" in WEEKLY_WORKFLOW_PROMPT
+        assert "Phase 2" in WEEKLY_WORKFLOW_PROMPT
+        assert "Phase 3" in WEEKLY_WORKFLOW_PROMPT
+        assert "Phase 4" in WEEKLY_WORKFLOW_PROMPT
+        assert "Phase 5" in WEEKLY_WORKFLOW_PROMPT
+
+    def test_weekly_prompt_mentions_mechanical_review(self) -> None:
+        """Weekly prompt should mention mechanical review elements."""
+        assert "accomplishments" in WEEKLY_WORKFLOW_PROMPT.lower()
+        assert "incomplete" in WEEKLY_WORKFLOW_PROMPT.lower()
+        assert "deadlines" in WEEKLY_WORKFLOW_PROMPT.lower()
+
+    def test_weekly_prompt_mentions_emotional_check(self) -> None:
+        """Weekly prompt should mention emotional reality check questions."""
+        assert "unease" in WEEKLY_WORKFLOW_PROMPT.lower()
+        assert "afraid" in WEEKLY_WORKFLOW_PROMPT.lower()
+        assert "joy" in WEEKLY_WORKFLOW_PROMPT.lower()
+
+    def test_weekly_prompt_mentions_constraints(self) -> None:
+        """Weekly prompt should mention constraint analysis."""
+        assert "Money" in WEEKLY_WORKFLOW_PROMPT
+        assert "Time" in WEEKLY_WORKFLOW_PROMPT
+        assert "Energy" in WEEKLY_WORKFLOW_PROMPT
+
+    def test_weekly_prompt_mentions_outputs(self) -> None:
+        """Weekly prompt should mention expected outputs."""
+        assert "logs/weekly" in WEEKLY_WORKFLOW_PROMPT
+        assert "vault_write_note" in WEEKLY_WORKFLOW_PROMPT
+        assert "priorities" in WEEKLY_WORKFLOW_PROMPT.lower()
+
+    # Journal prompt tests
+    def test_journal_prompt_contains_placeholder(self) -> None:
+        """Journal prompt should have a placeholder for entry context."""
+        assert "{entry_context}" in JOURNAL_WORKFLOW_PROMPT
+
+    def test_journal_prompt_format_with_entry(self) -> None:
+        """Journal prompt should format correctly with entry context."""
+        entry = "Today was a good day"
+        formatted = JOURNAL_WORKFLOW_PROMPT.format(entry_context=entry)
+        assert entry in formatted
+        assert "{entry_context}" not in formatted
+
+    def test_journal_prompt_mentions_daily_note(self) -> None:
+        """Journal prompt should reference daily note operations."""
+        assert "vault_get_daily_note" in JOURNAL_WORKFLOW_PROMPT
+        assert "vault_write_note" in JOURNAL_WORKFLOW_PROMPT
+        assert "## Journal" in JOURNAL_WORKFLOW_PROMPT
+
+    def test_journal_prompt_mentions_timestamp(self) -> None:
+        """Journal prompt should mention timestamped entries."""
+        assert "HH:MM" in JOURNAL_WORKFLOW_PROMPT
+        assert "timestamp" in JOURNAL_WORKFLOW_PROMPT.lower()
+
+    def test_journal_prompt_mentions_reverse_chronological(self) -> None:
+        """Journal prompt should specify reverse chronological order."""
+        assert "TOP" in JOURNAL_WORKFLOW_PROMPT or "top" in JOURNAL_WORKFLOW_PROMPT.lower()
+        assert "reverse chronological" in JOURNAL_WORKFLOW_PROMPT.lower()
+
 
 class TestPromptSecurity:
     """Tests for prompt injection safety."""
@@ -141,3 +204,9 @@ class TestPromptSecurity:
         malicious_mode = "Test {mode} {{injection}}"
         formatted = SYNC_WORKFLOW_PROMPT.format(mode=malicious_mode)
         assert malicious_mode in formatted
+
+    def test_journal_entry_escaping(self) -> None:
+        """Entry context with special characters should be safely inserted."""
+        malicious_entry = "Test {entry_context} {{injection}}"
+        formatted = JOURNAL_WORKFLOW_PROMPT.format(entry_context=malicious_entry)
+        assert malicious_entry in formatted
