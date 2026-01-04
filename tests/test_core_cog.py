@@ -8,6 +8,7 @@ from bot.cogs.core import (
     CAPTURE_WORKFLOW_PROMPT,
     DAILY_WORKFLOW_PROMPT,
     IDEA_WORKFLOW_PROMPT,
+    SYNC_WORKFLOW_PROMPT,
 )
 
 
@@ -85,6 +86,38 @@ class TestWorkflowPrompts:
         assert "daily note" in CAPTURE_WORKFLOW_PROMPT.lower()
         assert "@todoist-" in CAPTURE_WORKFLOW_PROMPT
 
+    def test_sync_prompt_contains_mode_placeholder(self) -> None:
+        """Sync prompt should have a placeholder for the mode."""
+        assert "{mode}" in SYNC_WORKFLOW_PROMPT
+
+    def test_sync_prompt_format_with_mode(self) -> None:
+        """Sync prompt should format correctly with a mode."""
+        formatted = SYNC_WORKFLOW_PROMPT.format(mode="end-of-day")
+        assert "end-of-day" in formatted
+        assert "{mode}" not in formatted
+
+    def test_sync_prompt_mentions_bidirectional_sync(self) -> None:
+        """Sync prompt should reference bidirectional sync."""
+        assert "Obsidian" in SYNC_WORKFLOW_PROMPT
+        assert "Todoist" in SYNC_WORKFLOW_PROMPT
+        assert "vault_get_daily_note" in SYNC_WORKFLOW_PROMPT
+        assert "vault_write_note" in SYNC_WORKFLOW_PROMPT
+
+    def test_sync_prompt_mentions_task_id_extraction(self) -> None:
+        """Sync prompt should mention extracting task IDs."""
+        assert "@todoist-TASK_ID" in SYNC_WORKFLOW_PROMPT
+        assert "- [x]" in SYNC_WORKFLOW_PROMPT
+
+    def test_sync_prompt_mentions_rollover(self) -> None:
+        """Sync prompt should mention task rollover for end-of-day mode."""
+        assert "rollover" in SYNC_WORKFLOW_PROMPT.lower()
+        assert "incomplete" in SYNC_WORKFLOW_PROMPT.lower()
+
+    def test_sync_prompt_mentions_summary(self) -> None:
+        """Sync prompt should mention summary report."""
+        assert "Summary" in SYNC_WORKFLOW_PROMPT or "summary" in SYNC_WORKFLOW_PROMPT
+        assert "synced" in SYNC_WORKFLOW_PROMPT.lower()
+
 
 class TestPromptSecurity:
     """Tests for prompt injection safety."""
@@ -102,3 +135,9 @@ class TestPromptSecurity:
         malicious_task = "Test {task_description} {{injection}}"
         formatted = CAPTURE_WORKFLOW_PROMPT.format(task_description=malicious_task)
         assert malicious_task in formatted
+
+    def test_sync_mode_escaping(self) -> None:
+        """Mode with special characters should be safely inserted."""
+        malicious_mode = "Test {mode} {{injection}}"
+        formatted = SYNC_WORKFLOW_PROMPT.format(mode=malicious_mode)
+        assert malicious_mode in formatted

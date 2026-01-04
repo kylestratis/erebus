@@ -152,6 +152,54 @@ Follow these steps:
 
 Keep it quick and minimal. Don't over-explain."""
 
+# Sync workflow prompt
+SYNC_WORKFLOW_PROMPT = """Synchronize task status between Obsidian and Todoist.
+
+Mode: {mode}
+
+## Mode-Specific Behavior:
+
+**quick** (default): Sync completion status bidirectionally, no rollover.
+**end-of-day**: Full sync + rollover incomplete tasks to tomorrow.
+**project**: Ask which project to sync, then sync only tasks for that project.
+
+## Steps:
+
+1. **Read today's daily note**
+   - Use vault_get_daily_note to get today's note
+   - If mode is "end-of-day", also read yesterday's note
+   - If mode is "project", ask user which project to sync first
+
+2. **Find completed tasks in Obsidian**
+   - Look for `- [x]` items with `(@todoist-TASK_ID)` pattern
+   - Extract the task IDs from these completed items
+   - If mode is "project", filter to tasks matching the selected project
+
+3. **Mark tasks complete in Todoist**
+   - Use todoist tools to mark extracted task IDs as complete
+   - Report any errors (task not found, already complete, etc.)
+
+4. **Check Todoist for completed tasks**
+   - Query Todoist for tasks completed today
+   - Find any that are still unchecked in the daily note
+   - Update those checkboxes: `- [ ]` → `- [x]`
+   - Write the updated note back using vault_write_note
+
+5. **Handle incomplete tasks** (end-of-day mode only):
+   - If mode is "end-of-day", ask if user wants to rollover incomplete tasks
+   - If yes:
+     - Get or create tomorrow's daily note
+     - Copy unchecked `- [ ]` items with `(@todoist-TASK_ID)` to tomorrow's Tasks section
+     - Optionally reschedule in Todoist
+
+6. **Summary report:**
+   - Tasks synced from Obsidian → Todoist (completed)
+   - Tasks synced from Todoist → Obsidian (completed)
+   - Tasks rolled over (if end-of-day)
+   - Any conflicts or issues
+
+Keep responses concise. Todoist is the source of truth for task metadata."""
+
 
 def is_allowed_user():
     """Check decorator that verifies user is in the whitelist."""
@@ -559,6 +607,111 @@ class CoreCog(commands.Cog, name="Core"):
                 "Something went wrong. Please try again later."
             )
 
+    @app_commands.command(
+        name="sync",
+        description="Sync task status between Obsidian and Todoist",
+    )
+    @app_commands.describe(
+        mode="Sync mode: quick (default), end-of-day, or project"
+    )
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="Quick sync (just completion status)", value="quick"),
+            app_commands.Choice(name="End of day (rollover incomplete tasks)", value="end-of-day"),
+            app_commands.Choice(name="Project sync (specific project)", value="project"),
+        ]
+    )
+    @is_allowed_user()
+    @is_dm_channel()
+    async def sync(
+        self,
+        interaction: discord.Interaction,
+        mode: app_commands.Choice[str] | None = None,
+    ) -> None:
+        """Sync task status between Obsidian and Todoist.
+
+        Performs bidirectional sync of task completion status and optionally
+        handles rollover of incomplete tasks.
+
+        Args:
+            interaction: The Discord interaction.
+            mode: The sync mode (quick, end-of-day, or project).
+        """
+        if not self.bot.conversation_manager:
+            await interaction.response.send_message(
+                "*Erebus cannot sync without a voice...*\n\n"
+                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /sync.",
+                ephemeral=True,
+            )
+            return
+
+        if not self.bot.vault:
+            await interaction.response.send_message(
+                "*Erebus has no vault to sync...*\n\n"
+                "Vault not configured. Set `OBSIDIAN_VAULT_PATH` to use /sync.",
+                ephemeral=True,
+            )
+            return
+
+        if not self.bot.mcp:
+            await interaction.response.send_message(
+                "*Erebus has no connection to Todoist...*\n\n"
+                "Todoist not configured. Set `TODOIST_API_TOKEN` to use /sync.",
+                ephemeral=True,
+            )
+            return
+
+        # Default to quick mode
+        sync_mode = mode.value if mode else "quick"
+
+        # Defer response since this workflow takes time
+        await interaction.response.defer(thinking=True)
+        logger.info(f"Sync started by {interaction.user}: mode={sync_mode}")
+
+        try:
+            prompt = SYNC_WORKFLOW_PROMPT.format(mode=sync_mode)
+            response = await asyncio.wait_for(
+                self.bot.conversation_manager.chat(
+                    user_id=interaction.user.id,
+                    message=prompt,
+                ),
+                timeout=WORKFLOW_TIMEOUT,
+            )
+
+            if response.content:
+                content = response.content.replace("\\`", "`")
+                await self._send_long_followup(interaction, content)
+            else:
+                await interaction.followup.send(
+                    "*Erebus attempted the sync but found nothing to report...*\n\n"
+                    "Something went wrong. Please try again."
+                )
+
+            logger.info(f"Sync completed for {interaction.user}: mode={sync_mode}")
+
+        except TimeoutError:
+            logger.error(f"Sync workflow timed out for {interaction.user}")
+            await interaction.followup.send(
+                "The sync took too long. Please try again."
+            )
+
+        except RateLimitError as e:
+            logger.warning(f"Rate limited during sync: {e}")
+            retry_msg = f" Try again in {e.retry_after:.0f}s." if e.retry_after else ""
+            await interaction.followup.send(f"Rate limited by AI provider.{retry_msg}")
+
+        except ModelError as e:
+            logger.exception(f"Model error during sync: {e}")
+            await interaction.followup.send(
+                "An error occurred while syncing. Please try again."
+            )
+
+        except Exception as e:
+            logger.exception(f"Unexpected error in sync: {e}")
+            await interaction.followup.send(
+                "Something went wrong. Please try again later."
+            )
+
     async def _send_long_followup(
         self,
         interaction: discord.Interaction,
@@ -603,6 +756,7 @@ class CoreCog(commands.Cog, name="Core"):
     @daily.error
     @idea.error
     @capture.error
+    @sync.error
     async def command_error_handler(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ) -> None:
