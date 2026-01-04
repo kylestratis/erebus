@@ -34,8 +34,8 @@ def temp_vault(tmp_path: Path) -> Vault:
     daily_dir = tmp_path / "Calendar" / "Daily Notes"
     daily_dir.mkdir(parents=True)
 
-    # Create a Daily Note template
-    (templates_dir / "Daily Note.md").write_text("# {{title}}\n\n## Tasks\n\n## Notes")
+    # Create a Daily Notes Template
+    (templates_dir / "Daily Notes Template.md").write_text("# {{title}}\n\n## Tasks\n\n## Notes")
 
     config = VaultConfig(
         root=tmp_path,
@@ -212,7 +212,7 @@ class TestTemplates:
         """Templates are loaded from templates directory."""
         templates = temp_vault.load_templates()
         assert "Test Template" in templates
-        assert "Daily Note" in templates
+        assert "Daily Notes Template" in templates
 
     def test_get_template(self, temp_vault: Vault) -> None:
         """Can get a specific template."""

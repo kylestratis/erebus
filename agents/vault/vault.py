@@ -35,6 +35,68 @@ class TemplateNotFoundError(VaultError):
     """Raised when a requested template does not exist."""
 
 
+def _obsidian_to_strftime(obsidian_format: str) -> str:
+    """Convert Obsidian date format to Python strftime format.
+
+    Obsidian uses moment.js-style tokens:
+    - YYYY: 4-digit year
+    - YY: 2-digit year
+    - MMMM: Full month name (January)
+    - MMM: Abbreviated month name (Jan)
+    - MM: 2-digit month (01-12)
+    - M: Month without leading zero
+    - DD: 2-digit day (01-31)
+    - D: Day without leading zero
+    - dddd: Full weekday name (Monday)
+    - ddd: Abbreviated weekday (Mon)
+    - dd: 2-letter weekday (Mo)
+    - HH: 24-hour hour (00-23)
+    - hh: 12-hour hour (01-12)
+    - mm: Minutes (00-59)
+    - ss: Seconds (00-59)
+    - A: AM/PM
+    - a: am/pm
+
+    Args:
+        obsidian_format: Obsidian/moment.js format string.
+
+    Returns:
+        Python strftime format string.
+    """
+    # Order matters: longer tokens must be replaced before shorter ones
+    # to avoid partial replacements (e.g., MMMM before MMM before MM before M)
+    replacements = [
+        # Year tokens
+        ("YYYY", "%Y"),
+        ("YY", "%y"),
+        # Month tokens (longest first)
+        ("MMMM", "%B"),
+        ("MMM", "%b"),
+        ("MM", "%m"),
+        ("M", "%-m"),
+        # Day tokens (longest first)
+        ("DD", "%d"),
+        ("D", "%-d"),
+        # Weekday tokens (longest first)
+        ("dddd", "%A"),
+        ("ddd", "%a"),
+        ("dd", "%a"),  # strftime doesn't have 2-letter weekday, use abbreviated
+        # Time tokens
+        ("HH", "%H"),
+        ("hh", "%I"),
+        ("mm", "%M"),
+        ("ss", "%S"),
+        ("A", "%p"),
+        ("a", "%p"),  # Use %p for both; %P is not portable
+    ]
+
+    result = obsidian_format
+    for obsidian_token, strftime_token in replacements:
+        result = result.replace(obsidian_token, strftime_token)
+
+    return result
+
+
 @dataclass
 class VaultConfig:
     """Configuration for a vault.
@@ -305,17 +367,17 @@ class Vault:
         now = datetime.now()
         variables = variables or {}
 
-        # Replace date variables
+        # Replace date variables (convert Obsidian format to strftime)
         content = re.sub(
             r"\{\{date(?::([^}]+))?\}\}",
-            lambda m: now.strftime(m.group(1) or "%Y-%m-%d"),
+            lambda m: now.strftime(_obsidian_to_strftime(m.group(1)) if m.group(1) else "%Y-%m-%d"),
             content,
         )
 
-        # Replace time variables
+        # Replace time variables (convert Obsidian format to strftime)
         content = re.sub(
             r"\{\{time(?::([^}]+))?\}\}",
-            lambda m: now.strftime(m.group(1) or "%H:%M"),
+            lambda m: now.strftime(_obsidian_to_strftime(m.group(1)) if m.group(1) else "%H:%M"),
             content,
         )
 
@@ -665,7 +727,7 @@ class Vault:
         path = self.get_daily_note_path(date)
 
         # Use provided template or default to "Daily Note"
-        template_name = template if template else "Daily Note"
+        template_name = template if template else "Daily Notes Template"
 
         # Prepare template variables
         variables = {
