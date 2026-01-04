@@ -29,6 +29,8 @@ from agents.vault import (
     VaultToolExecutor,
     get_vault_tool_definitions,
 )
+from bot.scheduler import Scheduler
+from bot.scheduler.jobs import DailyNoteJob, EndOfDaySyncJob, WeeklyReviewJob
 
 if TYPE_CHECKING:
     from bot.config import Settings
@@ -53,6 +55,7 @@ class ErebusBot(commands.Bot):
         start_time: When the bot started (for uptime tracking).
         conversation_manager: Manages conversations with the AI model.
         mcp: MCP client manager for tool integrations.
+        scheduler: Job scheduler for automated tasks.
     """
 
     def __init__(self, config: Settings) -> None:
@@ -78,6 +81,7 @@ class ErebusBot(commands.Bot):
         self.mcp: MCPClientManager | None = None
         self.vault: Vault | None = None
         self._model: AnthropicProvider | None = None
+        self.scheduler: Scheduler | None = None
 
         # Initialize AI model if API key is available
         if config.claude_api_key:
@@ -113,6 +117,9 @@ class ErebusBot(commands.Bot):
 
             # Initialize vault and register tools
             self._setup_vault()
+
+        # Initialize scheduler
+        self._setup_scheduler()
 
         # Sync commands
         if self.config.discord_guild_id:
@@ -180,6 +187,72 @@ class ErebusBot(commands.Bot):
             logger.exception(f"Failed to initialize vault: {e}")
             self.vault = None
 
+    def _setup_scheduler(self) -> None:
+        """Initialize the job scheduler and register jobs.
+
+        Jobs are registered but not started until on_ready.
+        """
+        if not self.config.scheduler_enabled:
+            logger.info("Scheduler disabled via configuration")
+            return
+
+        self.scheduler = Scheduler(
+            config=self.config,
+            timezone=self.config.scheduler_timezone,
+        )
+
+        # Register daily note job
+        daily_note_job = DailyNoteJob()
+        daily_note_job.cron = self.config.job_daily_note_cron
+        daily_note_job.enabled = self.config.job_daily_note_enabled
+        self.scheduler.register(daily_note_job)
+
+        # Register end-of-day sync job
+        eod_sync_job = EndOfDaySyncJob()
+        eod_sync_job.cron = self.config.job_end_of_day_sync_cron
+        eod_sync_job.enabled = self.config.job_end_of_day_sync_enabled
+        self.scheduler.register(eod_sync_job)
+
+        # Register weekly review job
+        weekly_review_job = WeeklyReviewJob()
+        weekly_review_job.cron = self.config.job_weekly_review_cron
+        weekly_review_job.enabled = self.config.job_weekly_review_enabled
+        self.scheduler.register(weekly_review_job)
+
+        # Set resources that are available now
+        self.scheduler.set_resources(
+            conversation_manager=self.conversation_manager,
+            vault=self.vault,
+            mcp=self.mcp,
+        )
+
+        logger.info(f"Scheduler initialized with {len(self.scheduler.jobs)} jobs")
+
+    async def _start_scheduler(self) -> None:
+        """Start the scheduler after bot is ready.
+
+        Fetches the primary Discord user for DMs and starts the scheduler.
+        """
+        if not self.scheduler:
+            return
+
+        # Fetch the primary user for DMs
+        try:
+            user = await self.fetch_user(self.config.discord_user_id)
+            self.scheduler.set_discord_user(user)
+            logger.info(f"Scheduler configured to DM user: {user}")
+        except discord.NotFound:
+            logger.warning(
+                f"Could not find Discord user {self.config.discord_user_id}. "
+                "Scheduled jobs will not be able to send DMs."
+            )
+        except Exception as e:
+            logger.exception(f"Failed to fetch Discord user for scheduler: {e}")
+
+        # Start the scheduler
+        await self.scheduler.start()
+        logger.info("Scheduler started")
+
     async def on_ready(self) -> None:
         """Called when the bot is ready and connected."""
         self.start_time = datetime.now(UTC)
@@ -195,6 +268,9 @@ class ErebusBot(commands.Bot):
                 name="the void",
             )
         )
+
+        # Start scheduler and set up Discord user for DMs
+        await self._start_scheduler()
 
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages with security checks.
@@ -377,6 +453,11 @@ class ErebusBot(commands.Bot):
 
     async def close(self) -> None:
         """Clean up resources before shutting down."""
+        # Stop scheduler
+        if self.scheduler:
+            logger.info("Shutting down scheduler...")
+            await self.scheduler.stop()
+
         # Clean up MCP connections
         if self.mcp:
             logger.info("Shutting down MCP connections...")

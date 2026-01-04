@@ -35,8 +35,7 @@ dependencies = [
     "rich>=13.7.0",
 
     # Scheduling
-    "apscheduler>=3.10.0",
-    "python-crontab>=3.0.0",
+    "apscheduler>=3.10.0,<4.0.0",
 ]
 
 [project.optional-dependencies]

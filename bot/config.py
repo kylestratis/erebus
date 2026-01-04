@@ -100,6 +100,40 @@ class Settings(BaseSettings):
         description="strftime format for daily note filenames",
     )
 
+    # Scheduler settings
+    scheduler_timezone: str = Field(
+        default="America/Chicago",
+        description="Timezone for scheduled jobs (IANA timezone name)",
+    )
+    scheduler_enabled: bool = Field(
+        default=True,
+        description="Whether to enable the job scheduler",
+    )
+    job_daily_note_enabled: bool = Field(
+        default=True,
+        description="Enable automatic daily note generation (6am)",
+    )
+    job_daily_note_cron: str = Field(
+        default="0 6 * * *",
+        description="Cron expression for daily note job",
+    )
+    job_end_of_day_sync_enabled: bool = Field(
+        default=True,
+        description="Enable end-of-day sync (11:55pm)",
+    )
+    job_end_of_day_sync_cron: str = Field(
+        default="55 23 * * *",
+        description="Cron expression for end-of-day sync job",
+    )
+    job_weekly_review_enabled: bool = Field(
+        default=True,
+        description="Enable weekly review prompt (Sunday 6pm)",
+    )
+    job_weekly_review_cron: str = Field(
+        default="0 18 * * 0",
+        description="Cron expression for weekly review job",
+    )
+
     # Application settings
     environment: Environment = Field(
         default=Environment.DEVELOPMENT,
@@ -133,6 +167,23 @@ class Settings(BaseSettings):
         v = v.upper()
         if v not in valid_levels:
             return "INFO"
+        return v
+
+    @field_validator(
+        "job_daily_note_cron",
+        "job_end_of_day_sync_cron",
+        "job_weekly_review_cron",
+        mode="after",
+    )
+    @classmethod
+    def validate_cron_expression(cls, v: str) -> str:
+        """Validate cron expressions at config load time."""
+        from apscheduler.triggers.cron import CronTrigger
+
+        try:
+            CronTrigger.from_crontab(v, timezone="UTC")
+        except ValueError as e:
+            raise ValueError(f"Invalid cron expression '{v}': {e}") from e
         return v
 
     @field_validator("discord_bot_token", mode="before")
