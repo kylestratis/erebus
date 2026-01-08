@@ -1,5 +1,13 @@
 [
   {
+    "hash": "2d21ea23df77cea588611e56bf1fd5522fdcb9d7",
+    "short_hash": "2d21ea2",
+    "author": "Kyle Stratis",
+    "date": "2026-01-07T22:55:49-05:00",
+    "message": "Integrate EidolonMemory with Letta for persistent memory\n\nAdd EidolonMemory system that wraps Letta SDK for per-user persistent memory:\n\n- Add agents/eidolon/ module with client, memory blocks, and tool registry\n- Add Docker configuration for Letta server with PostgreSQL\n- Integrate EidolonMemory into bot client, replacing ConversationManager\n- Update scheduler jobs to use EidolonMemory for AI operations\n- Update slash commands in core.py to use eidolon.chat()\n- Add ToolRegistry for native vault tool execution in bot process\n- Remove unused claude_api_key from config (Letta handles LLM)\n- Clean up stale ConversationManager exports from agents/__init__.py\n- Update README with local development and DigitalOcean deployment\n- Add docs/eidolon-memory.md with architecture documentation\n- Add comprehensive tests for EidolonMemory module\n\nThis completes Phases 1-4 and 6 of the EidolonMemory implementation plan.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+    "files_changed": 19
+  },
+  {
     "hash": "417d4cd4c2fe0421dbad93bc681543b106154041",
     "short_hash": "417d4cd",
     "author": "Kyle Stratis",
