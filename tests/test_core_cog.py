@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from bot.cogs.core import (
     CAPTURE_WORKFLOW_PROMPT,
     DAILY_WORKFLOW_PROMPT,

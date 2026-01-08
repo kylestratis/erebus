@@ -10,33 +10,34 @@
 
 Erebus is a Discord-based AI assistant that operates in the liminal space between thought and action:
 
-- **EidolonMemory**: Stateful memory system that learns your patterns and preferences (via Letta)
-- **Productivity Integration**: Todoist tasks, Obsidian notes, GitHub repos
-- **Intelligent Scheduling**: Task prioritization and schedule suggestions
-- **Autonomous Operations**: Background research and knowledge building (2am-4am darkness window)
-- **Secure Architecture**: Agent isolation to prevent "Lethal Trifecta" vulnerabilities
+- **EidolonMemory**: Stateful memory system powered by Letta that learns your patterns and preferences across sessions
+- **Productivity Integration**: Todoist tasks, Obsidian notes, scheduled jobs
+- **Intelligent Scheduling**: Automated daily notes, end-of-day sync, weekly reviews
+- **Secure Architecture**: DM-only, user whitelist, agent isolation
 
 ## Architecture
 
 ```
-Discord Bot (DigitalOcean Droplet)
-    ↓
-├─ Erebus (Main Agent - Private data access)
-│  ├─ EidolonMemory (Letta-powered stateful learning) [planned]
-│  ├─ MCP Tool Access: Todoist, GitHub
-│  └─ Direct Integration: Obsidian Vault (via Syncthing)
-│
-└─ Sanitizer Agent (Handles untrusted content) [planned]
-   └─ Web scraping, file parsing
-    ↓
-Claude API + Anthropic SDK
-    ↓
-Integrations:
-├─ Todoist MCP Server (@doist/todoist-ai)
-├─ Obsidian Vault (direct Python file I/O, synced via Syncthing)
-├─ GitHub MCP (official) [planned]
-├─ Learning MCP (custom: Anki, Readwise) [planned]
-└─ Calendar MCP [planned]
+Discord Bot
+    │
+    ▼
+EidolonMemory (wrapper)
+    │
+    ▼ REST API
+Letta Server (Docker)
+    ├── Agent per user
+    │   ├── Core Memory (persona, user profile)
+    │   ├── Archival Memory (learned patterns)
+    │   └── Recall Memory (conversation history)
+    │
+    ├── Native Tools (executed by bot)
+    │   └── Vault tools (Obsidian operations)
+    │
+    └── MCP Tools (executed by Letta)
+        └── Todoist MCP server
+    │
+    ▼
+PostgreSQL (state persistence)
 ```
 
 ## Project Structure
@@ -44,32 +45,30 @@ Integrations:
 ```
 erebus/
 ├── bot/              # Discord bot
-│   ├── cogs/         # Command modules
+│   ├── cogs/         # Command modules (slash commands)
+│   ├── scheduler/    # Automated jobs (daily note, sync, weekly review)
 │   ├── client.py     # Discord client with auth
-│   ├── config.py     # pydantic-settings configuration
-│   └── logging.py    # Structured logging setup
+│   └── config.py     # pydantic-settings configuration
 ├── agents/           # AI agent integrations
+│   ├── eidolon/      # EidolonMemory (Letta wrapper)
 │   ├── mcp/          # MCP client for tool servers
 │   ├── models/       # LLM providers (Anthropic)
-│   ├── vault/        # Obsidian vault operations
-│   └── conversation.py
+│   └── vault/        # Obsidian vault operations
+├── docker/           # Docker configurations
+│   └── letta/        # Letta server + PostgreSQL
 ├── docs/             # Documentation
-│   ├── decisions/    # Architecture decision records
-│   ├── research/     # Research notes
-│   └── mcp/          # MCP integration docs
-├── tests/            # Test suite
-└── docker/           # Docker configurations
+└── tests/            # Test suite
 ```
 
-## Development Setup
+## Local Development
 
 ### Prerequisites
 
 - Python 3.11+
 - [mise](https://mise.jdx.dev/) for tool management
 - [uv](https://github.com/astral-sh/uv) for Python dependency management
+- Docker and Docker Compose
 - Git
-- Docker (for deployment)
 
 ### Quick Start
 
@@ -85,50 +84,144 @@ uv sync
 # Copy environment template
 cp .env.example .env
 # Edit .env with your credentials
+```
 
-# Run tests
+### Start Letta Server
+
+Letta provides the stateful memory backend. Start it with Docker:
+
+```bash
+cd docker/letta
+docker compose up -d
+```
+
+This starts:
+- **Letta server** on `http://localhost:8283`
+- **PostgreSQL** for persistent storage
+
+Verify it's running:
+```bash
+curl http://localhost:8283/health
+```
+
+### Configure Environment
+
+Edit `.env` with your credentials:
+
+```bash
+# Required
+DISCORD_BOT_TOKEN=your_discord_bot_token
+DISCORD_USER_ID=your_discord_user_id
+
+# For AI features
+ANTHROPIC_API_KEY=sk-ant-...  # Used by Letta for Claude
+OPENAI_API_KEY=sk-...         # Used by Letta for embeddings
+
+# Letta connection (default is localhost)
+LETTA_API_URL=http://localhost:8283
+
+# Optional integrations
+TODOIST_API_TOKEN=your_todoist_token
+OBSIDIAN_VAULT_PATH=/path/to/your/vault
+```
+
+### Run the Bot
+
+```bash
+# Run tests first
 uv run pytest
 
-# Run bot (development)
+# Start the bot
 uv run python -m bot
 ```
 
-## Configuration
+### Stopping Services
 
-Erebus uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration management with automatic validation.
+```bash
+# Stop the bot with Ctrl+C
 
-### Local Development
+# Stop Letta server
+cd docker/letta
+docker compose down
 
-For local development, copy the example environment file and fill in your credentials:
+# To also remove data volume
+docker compose down -v
+```
+
+## DigitalOcean Deployment
+
+### Requirements
+
+- DigitalOcean Droplet (2GB RAM minimum)
+- Domain (optional, for monitoring)
+
+### Initial Setup
+
+```bash
+# SSH into your droplet
+ssh root@your-droplet-ip
+
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+
+# Install Docker Compose
+apt-get update && apt-get install -y docker-compose-plugin
+
+# Clone the repo
+git clone https://github.com/kylestratis/erebus.git
+cd erebus
+```
+
+### Configure Environment
 
 ```bash
 cp .env.example .env
-# Edit .env with your values
+nano .env  # Add your credentials
 ```
 
-The `.env` file is automatically loaded during development. Settings are validated on startup with clear error messages for missing or invalid values.
+Required variables:
+- `DISCORD_BOT_TOKEN` - From Discord Developer Portal
+- `DISCORD_USER_ID` - Your Discord user ID
+- `ANTHROPIC_API_KEY` - For Claude (used by Letta)
+- `OPENAI_API_KEY` - For embeddings (used by Letta)
 
-### Docker / Production
-
-In production (Docker), pass environment variables directly instead of using a `.env` file:
+### Start Services
 
 ```bash
-docker run -d \
-  -e DISCORD_BOT_TOKEN=your_token \
-  -e DISCORD_USER_ID=123456789 \
-  -e CLAUDE_API_KEY=sk-ant-... \
-  erebus
+# Start Letta + PostgreSQL
+cd docker/letta
+docker compose up -d
+
+# Return to project root
+cd ../..
+
+# Build and run the bot (TODO: add bot Dockerfile)
+uv sync
+uv run python -m bot
 ```
 
-Or use Docker Compose with an environment file:
+### Vault Sync with Syncthing
 
-```yaml
-services:
-  erebus:
-    image: erebus
-    env_file:
-      - .env.production
+To sync your Obsidian vault to the droplet:
+
+1. Install Syncthing on the droplet
+2. Configure folder sync from your local vault
+3. Set `OBSIDIAN_VAULT_PATH` to the synced location
+
+### Monitoring
+
+Check logs:
+```bash
+# Letta logs
+docker logs erebus-letta -f
+
+# Bot logs
+journalctl -u erebus -f  # if running as systemd service
 ```
+
+## Configuration Reference
+
+Erebus uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration management with automatic validation.
 
 ### Environment Variables
 
@@ -166,13 +259,12 @@ See `.env.example` for a complete template with all available options.
 ### MVP (Current Phase)
 - [x] Project scaffolding (mise, uv, Docker, pre-commit)
 - [x] Discord bot with user authentication (whitelist + DM-only)
-- [x] Natural conversation with Claude
+- [x] Natural conversation with Claude (via Letta)
 - [x] Todoist integration (via MCP)
 - [x] Obsidian vault integration (direct file I/O)
-- [ ] Slash commands (`/daily`, `/idea`)
-- [ ] EidolonMemory system (Letta)
-- [ ] Daily note auto-generation
-- [ ] Morning briefing
+- [x] Slash commands (`/daily`, `/idea`, `/capture`, `/sync`, `/weekly`, `/journal`)
+- [x] EidolonMemory system (Letta) with persistent memory
+- [x] Scheduled jobs (daily note with morning briefing, end-of-day sync, weekly review)
 
 ### Phase 2 (Planned)
 - [ ] Sanitizer agent for untrusted content
@@ -191,7 +283,7 @@ See `.env.example` for a complete template with all available options.
 ## Documentation
 
 - [Implementation Checklist](https://github.com/kylestratis/erebus/wiki/Implementation)
-- [EidolonMemory Architecture](docs/eidolon-memory.md) (TODO)
+- [EidolonMemory Architecture](docs/eidolon-memory.md)
 - [MCP Server Documentation](docs/mcp/) (TODO)
 - [Deployment Guide](docs/deployment/) (TODO)
 

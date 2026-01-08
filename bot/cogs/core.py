@@ -423,10 +423,10 @@ class CoreCog(commands.Cog, name="Core"):
             interaction: The Discord interaction.
         """
         # Check prerequisites
-        if not self.bot.conversation_manager:
+        if not self.bot.eidolon:
             await interaction.response.send_message(
                 "*Erebus cannot plan without a voice...*\n\n"
-                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /daily.",
+                "AI features are disabled. Start Letta server and configure `LETTA_API_URL` to use /daily.",
                 ephemeral=True,
             )
             return
@@ -445,16 +445,18 @@ class CoreCog(commands.Cog, name="Core"):
 
         try:
             response = await asyncio.wait_for(
-                self.bot.conversation_manager.chat(
+                self.bot.eidolon.chat(
                     user_id=interaction.user.id,
                     message=DAILY_WORKFLOW_PROMPT,
+                    user_name=interaction.user.display_name,
+                    timezone=self.bot.config.scheduler_timezone,
                 ),
                 timeout=WORKFLOW_TIMEOUT,
             )
 
-            if response.content:
+            if response:
                 # Clean up over-escaped backticks from model output
-                content = response.content.replace("\\`", "`")
+                content = response.replace("\\`", "`")
                 await self._send_long_followup(interaction, content)
             else:
                 await interaction.followup.send(
@@ -523,10 +525,10 @@ class CoreCog(commands.Cog, name="Core"):
             )
             return
 
-        if not self.bot.conversation_manager:
+        if not self.bot.eidolon:
             await interaction.response.send_message(
                 "*Erebus cannot capture ideas without a voice...*\n\n"
-                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /idea.",
+                "AI features are disabled. Start Letta server and configure `LETTA_API_URL` to use /idea.",
                 ephemeral=True,
             )
             return
@@ -546,15 +548,17 @@ class CoreCog(commands.Cog, name="Core"):
         try:
             prompt = IDEA_WORKFLOW_PROMPT.format(title=title)
             response = await asyncio.wait_for(
-                self.bot.conversation_manager.chat(
+                self.bot.eidolon.chat(
                     user_id=interaction.user.id,
                     message=prompt,
+                    user_name=interaction.user.display_name,
+                    timezone=self.bot.config.scheduler_timezone,
                 ),
                 timeout=WORKFLOW_TIMEOUT,
             )
 
-            if response.content:
-                content = response.content.replace("\\`", "`")
+            if response:
+                content = response.replace("\\`", "`")
                 await self._send_long_followup(interaction, content)
             else:
                 await interaction.followup.send(
@@ -623,10 +627,10 @@ class CoreCog(commands.Cog, name="Core"):
             )
             return
 
-        if not self.bot.conversation_manager:
+        if not self.bot.eidolon:
             await interaction.response.send_message(
                 "*Erebus cannot capture tasks without a voice...*\n\n"
-                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /capture.",
+                "AI features are disabled. Start Letta server and configure `LETTA_API_URL` to use /capture.",
                 ephemeral=True,
             )
             return
@@ -646,15 +650,17 @@ class CoreCog(commands.Cog, name="Core"):
         try:
             prompt = CAPTURE_WORKFLOW_PROMPT.format(task_description=task)
             response = await asyncio.wait_for(
-                self.bot.conversation_manager.chat(
+                self.bot.eidolon.chat(
                     user_id=interaction.user.id,
                     message=prompt,
+                    user_name=interaction.user.display_name,
+                    timezone=self.bot.config.scheduler_timezone,
                 ),
                 timeout=WORKFLOW_TIMEOUT,
             )
 
-            if response.content:
-                content = response.content.replace("\\`", "`")
+            if response:
+                content = response.replace("\\`", "`")
                 await self._send_long_followup(interaction, content)
             else:
                 await interaction.followup.send(
@@ -717,10 +723,10 @@ class CoreCog(commands.Cog, name="Core"):
             interaction: The Discord interaction.
             mode: The sync mode (quick, end-of-day, or project).
         """
-        if not self.bot.conversation_manager:
+        if not self.bot.eidolon:
             await interaction.response.send_message(
                 "*Erebus cannot sync without a voice...*\n\n"
-                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /sync.",
+                "AI features are disabled. Start Letta server and configure `LETTA_API_URL` to use /sync.",
                 ephemeral=True,
             )
             return
@@ -751,15 +757,17 @@ class CoreCog(commands.Cog, name="Core"):
         try:
             prompt = SYNC_WORKFLOW_PROMPT.format(mode=sync_mode)
             response = await asyncio.wait_for(
-                self.bot.conversation_manager.chat(
+                self.bot.eidolon.chat(
                     user_id=interaction.user.id,
                     message=prompt,
+                    user_name=interaction.user.display_name,
+                    timezone=self.bot.config.scheduler_timezone,
                 ),
                 timeout=WORKFLOW_TIMEOUT,
             )
 
-            if response.content:
-                content = response.content.replace("\\`", "`")
+            if response:
+                content = response.replace("\\`", "`")
                 await self._send_long_followup(interaction, content)
             else:
                 await interaction.followup.send(
@@ -808,10 +816,10 @@ class CoreCog(commands.Cog, name="Core"):
         Args:
             interaction: The Discord interaction.
         """
-        if not self.bot.conversation_manager:
+        if not self.bot.eidolon:
             await interaction.response.send_message(
                 "*Erebus cannot guide a review without a voice...*\n\n"
-                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /weekly.",
+                "AI features are disabled. Start Letta server and configure `LETTA_API_URL` to use /weekly.",
                 ephemeral=True,
             )
             return
@@ -830,15 +838,17 @@ class CoreCog(commands.Cog, name="Core"):
 
         try:
             response = await asyncio.wait_for(
-                self.bot.conversation_manager.chat(
+                self.bot.eidolon.chat(
                     user_id=interaction.user.id,
                     message=WEEKLY_WORKFLOW_PROMPT,
+                    user_name=interaction.user.display_name,
+                    timezone=self.bot.config.scheduler_timezone,
                 ),
                 timeout=WORKFLOW_TIMEOUT,
             )
 
-            if response.content:
-                content = response.content.replace("\\`", "`")
+            if response:
+                content = response.replace("\\`", "`")
                 await self._send_long_followup(interaction, content)
             else:
                 await interaction.followup.send(
@@ -894,10 +904,10 @@ class CoreCog(commands.Cog, name="Core"):
             interaction: The Discord interaction.
             entry: Optional journal entry text.
         """
-        if not self.bot.conversation_manager:
+        if not self.bot.eidolon:
             await interaction.response.send_message(
                 "*Erebus cannot journal without a voice...*\n\n"
-                "AI features are disabled. Configure `CLAUDE_API_KEY` to use /journal.",
+                "AI features are disabled. Start Letta server and configure `LETTA_API_URL` to use /journal.",
                 ephemeral=True,
             )
             return
@@ -924,15 +934,17 @@ class CoreCog(commands.Cog, name="Core"):
         try:
             prompt = JOURNAL_WORKFLOW_PROMPT.format(entry_context=entry_context)
             response = await asyncio.wait_for(
-                self.bot.conversation_manager.chat(
+                self.bot.eidolon.chat(
                     user_id=interaction.user.id,
                     message=prompt,
+                    user_name=interaction.user.display_name,
+                    timezone=self.bot.config.scheduler_timezone,
                 ),
                 timeout=WORKFLOW_TIMEOUT,
             )
 
-            if response.content:
-                content = response.content.replace("\\`", "`")
+            if response:
+                content = response.replace("\\`", "`")
                 await self._send_long_followup(interaction, content)
             else:
                 await interaction.followup.send(

@@ -92,7 +92,7 @@ class EndOfDaySyncJob(ScheduledJob):
     3. Send an end-of-day summary DM
 
     Requires:
-    - AI (conversation_manager)
+    - AI (eidolon)
     - Vault
     - MCP (for Todoist)
     - Discord user (for DM, optional)

@@ -18,7 +18,8 @@ from bot.scheduler.base import JobContext, JobResult, JobStatus, ScheduledJob
 if TYPE_CHECKING:
     import discord
 
-    from agents import ConversationManager, MCPClientManager
+    from agents import MCPClientManager
+    from agents.eidolon import EidolonMemory
     from agents.vault import Vault
     from bot.config import Settings
 
@@ -38,7 +39,7 @@ class Scheduler:
 
         # Set resources when available
         scheduler.set_resources(
-            conversation_manager=bot.conversation_manager,
+            eidolon=bot.eidolon,
             vault=bot.vault,
             mcp=bot.mcp,
         )
@@ -78,7 +79,7 @@ class Scheduler:
         self._history: list[tuple[str, JobResult]] = []
 
         # Resources set later via set_resources()
-        self._conversation_manager: ConversationManager | None = None
+        self._eidolon: EidolonMemory | None = None
         self._vault: Vault | None = None
         self._mcp: MCPClientManager | None = None
         self._discord_user: discord.User | None = None
@@ -102,23 +103,23 @@ class Scheduler:
 
     def set_resources(
         self,
-        conversation_manager: ConversationManager | None = None,
+        eidolon: EidolonMemory | None = None,
         vault: Vault | None = None,
         mcp: MCPClientManager | None = None,
     ) -> None:
         """Set shared resources that jobs can access.
 
         Args:
-            conversation_manager: AI conversation interface.
+            eidolon: EidolonMemory instance for AI capabilities.
             vault: Obsidian vault interface.
             mcp: MCP client manager.
         """
-        self._conversation_manager = conversation_manager
+        self._eidolon = eidolon
         self._vault = vault
         self._mcp = mcp
         logger.info(
             f"Scheduler resources updated: "
-            f"ai={conversation_manager is not None}, "
+            f"ai={eidolon is not None}, "
             f"vault={vault is not None}, "
             f"mcp={mcp is not None}"
         )
@@ -137,7 +138,7 @@ class Scheduler:
         """Build a job context with current resources."""
         return JobContext(
             config=self.config,
-            conversation_manager=self._conversation_manager,
+            eidolon=self._eidolon,
             vault=self._vault,
             mcp=self._mcp,
             discord_user=self._discord_user,

@@ -34,12 +34,13 @@ class Settings(BaseSettings):
         discord_user_id: Primary user's Discord ID.
         discord_guild_id: Optional guild ID for faster command sync.
         allowed_user_ids: Set of Discord user IDs allowed to use the bot.
-        claude_api_key: Anthropic API key for Claude.
         todoist_api_token: Todoist API token for task management.
         obsidian_vault_path: Path to Obsidian vault root.
         obsidian_templates_path: Relative path to templates directory.
         obsidian_daily_notes_path: Relative path to daily notes directory.
         obsidian_daily_note_format: strftime format for daily note filenames.
+        letta_api_url: Letta server API URL.
+        letta_api_key: Letta API key (optional for local server).
         environment: Application environment (development/staging/production).
         log_level: Logging level.
     """
@@ -69,12 +70,6 @@ class Settings(BaseSettings):
     )
     # Parsed set populated by model validator (private attr not from env)
     _allowed_user_ids_set: set[int] = PrivateAttr(default_factory=set)
-
-    # AI Model settings
-    claude_api_key: str | None = Field(
-        default=None,
-        description="Anthropic API key for Claude",
-    )
 
     # Integration settings
     todoist_api_token: str | None = Field(
@@ -132,6 +127,16 @@ class Settings(BaseSettings):
     job_weekly_review_cron: str = Field(
         default="0 18 * * 0",
         description="Cron expression for weekly review job",
+    )
+
+    # Letta settings
+    letta_api_url: str = Field(
+        default="http://localhost:8283",
+        description="Letta server API URL",
+    )
+    letta_api_key: str | None = Field(
+        default=None,
+        description="Letta API key (optional for local server)",
     )
 
     # Application settings
@@ -211,15 +216,15 @@ class Settings(BaseSettings):
                 raise ValueError(f"DISCORD_USER_ID must be numeric, got: {v}") from e
         return v
 
-    @field_validator("claude_api_key", "todoist_api_token", mode="before")
+    @field_validator("todoist_api_token", "letta_api_key", mode="before")
     @classmethod
     def filter_placeholder_values(cls, v: str | None) -> str | None:
         """Filter out placeholder values from .env.example."""
         if v is None:
             return None
         placeholders = {
-            "your_anthropic_api_key_here",
             "your_todoist_api_token_here",
+            "optional_letta_api_key",
         }
         if v in placeholders:
             return None

@@ -70,7 +70,7 @@ class DailyNoteJob(ScheduledJob):
     2. Send a morning briefing DM to the user
 
     Requires:
-    - AI (conversation_manager)
+    - AI (eidolon)
     - Vault
     - MCP (for Todoist)
     - Discord user (for DM)

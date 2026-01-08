@@ -74,13 +74,13 @@ class TestJobContext:
     """Tests for JobContext class."""
 
     def test_has_ai_property(self) -> None:
-        """has_ai should reflect conversation_manager presence."""
+        """has_ai should reflect eidolon presence."""
         config = MagicMock()
 
-        context = JobContext(config=config, conversation_manager=None)
+        context = JobContext(config=config, eidolon=None)
         assert context.has_ai is False
 
-        context = JobContext(config=config, conversation_manager=MagicMock())
+        context = JobContext(config=config, eidolon=MagicMock())
         assert context.has_ai is True
 
     def test_has_vault_property(self) -> None:
@@ -162,26 +162,31 @@ class TestScheduledJob:
     async def test_chat_without_ai(self) -> None:
         """chat should return None if no AI."""
         job = DummyJob()
-        context = JobContext(config=MagicMock(), conversation_manager=None)
+        context = JobContext(config=MagicMock(), eidolon=None)
         job.set_context(context)
 
         result = await job.chat("Hello")
         assert result is None
 
     async def test_chat_with_ai(self) -> None:
-        """chat should call conversation manager."""
+        """chat should call eidolon."""
         job = DummyJob()
-        mock_cm = AsyncMock()
-        mock_cm.chat.return_value.content = "AI response"
+        mock_eidolon = AsyncMock()
+        mock_eidolon.chat.return_value = "AI response"
         mock_config = MagicMock()
         mock_config.discord_user_id = 12345
+        mock_config.scheduler_timezone = "America/New_York"
 
-        context = JobContext(config=mock_config, conversation_manager=mock_cm)
+        context = JobContext(config=mock_config, eidolon=mock_eidolon)
         job.set_context(context)
 
         result = await job.chat("Hello")
         assert result == "AI response"
-        mock_cm.chat.assert_called_once_with(user_id=12345, message="Hello")
+        mock_eidolon.chat.assert_called_once_with(
+            user_id=12345,
+            message="Hello",
+            timezone="America/New_York",
+        )
 
 
 class TestScheduler:
@@ -255,11 +260,11 @@ class TestScheduler:
         vault = MagicMock()
         mcp = MagicMock()
 
-        scheduler.set_resources(conversation_manager=cm, vault=vault, mcp=mcp)
+        scheduler.set_resources(eidolon=cm, vault=vault, mcp=mcp)
 
         # Build context and verify resources are included
         context = scheduler._build_context()
-        assert context.conversation_manager is cm
+        assert context.eidolon is cm
         assert context.vault is vault
         assert context.mcp is mcp
 
@@ -369,7 +374,7 @@ class TestDailyNoteJob:
         from bot.scheduler.jobs import DailyNoteJob
 
         job = DailyNoteJob()
-        context = JobContext(config=MagicMock(), conversation_manager=None)
+        context = JobContext(config=MagicMock(), eidolon=None)
         job.set_context(context)
 
         result = await job.run()
@@ -383,7 +388,7 @@ class TestDailyNoteJob:
         job = DailyNoteJob()
         context = JobContext(
             config=MagicMock(),
-            conversation_manager=MagicMock(),
+            eidolon=MagicMock(),
             vault=None,
         )
         job.set_context(context)
@@ -412,7 +417,7 @@ class TestEndOfDaySyncJob:
         job = EndOfDaySyncJob()
         context = JobContext(
             config=MagicMock(),
-            conversation_manager=MagicMock(),
+            eidolon=MagicMock(),
             vault=MagicMock(),
             mcp=None,
         )

@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import discord
 
-    from agents import ConversationManager, MCPClientManager
+    from agents import MCPClientManager
+    from agents.eidolon import EidolonMemory
     from agents.vault import Vault
     from bot.config import Settings
 
@@ -82,14 +83,14 @@ class JobContext:
 
     Attributes:
         config: Bot configuration settings.
-        conversation_manager: AI conversation interface (may be None).
+        eidolon: EidolonMemory instance for AI capabilities (may be None).
         vault: Obsidian vault interface (may be None).
         mcp: MCP client manager for integrations (may be None).
         discord_user: Discord user to send messages to (may be None).
     """
 
     config: Settings
-    conversation_manager: ConversationManager | None = None
+    eidolon: EidolonMemory | None = None
     vault: Vault | None = None
     mcp: MCPClientManager | None = None
     discord_user: discord.User | None = None
@@ -97,7 +98,7 @@ class JobContext:
     @property
     def has_ai(self) -> bool:
         """Check if AI capabilities are available."""
-        return self.conversation_manager is not None
+        return self.eidolon is not None
 
     @property
     def has_vault(self) -> bool:
@@ -222,11 +223,12 @@ class ScheduledJob(ABC):
             if user_id is None:
                 user_id = self.context.config.discord_user_id
 
-            response = await self.context.conversation_manager.chat(
+            response = await self.context.eidolon.chat(
                 user_id=user_id,
                 message=message,
+                timezone=self.context.config.scheduler_timezone,
             )
-            return response.content
+            return response
         except Exception as e:
             logger.exception(f"Job {self.name} AI chat failed: {e}")
             return None

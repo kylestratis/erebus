@@ -15,12 +15,15 @@ import discord
 from discord.ext import commands
 
 from agents import (
-    AnthropicProvider,
-    ConversationManager,
     MCPClientManager,
     ModelError,
     RateLimitError,
     create_todoist_config,
+)
+from agents.eidolon import (
+    EidolonConfig,
+    EidolonMemory,
+    ToolRegistry,
 )
 from agents.vault import (
     Vault,
@@ -53,8 +56,9 @@ class ErebusBot(commands.Bot):
     Attributes:
         config: Bot configuration instance.
         start_time: When the bot started (for uptime tracking).
-        conversation_manager: Manages conversations with the AI model.
-        mcp: MCP client manager for tool integrations.
+        eidolon: Letta-powered stateful memory system.
+        mcp: MCP client manager for tool integrations (Todoist).
+        vault: Obsidian vault for note operations.
         scheduler: Job scheduler for automated tasks.
     """
 
@@ -77,21 +81,11 @@ class ErebusBot(commands.Bot):
 
         self.config = config
         self.start_time: datetime | None = None
-        self.conversation_manager: ConversationManager | None = None
+        self.eidolon: EidolonMemory | None = None
         self.mcp: MCPClientManager | None = None
         self.vault: Vault | None = None
-        self._model: AnthropicProvider | None = None
+        self._tool_registry: ToolRegistry | None = None
         self.scheduler: Scheduler | None = None
-
-        # Initialize AI model if API key is available
-        if config.claude_api_key:
-            self._model = AnthropicProvider(api_key=config.claude_api_key)
-            logger.info(f"Initialized AI model: {self._model.name} ({self._model.default_model})")
-        else:
-            logger.warning(
-                "CLAUDE_API_KEY not set - AI features disabled. "
-                "Set CLAUDE_API_KEY in your .env file to enable AI responses."
-            )
 
     async def setup_hook(self) -> None:
         """Async setup called after login but before connecting.
@@ -104,19 +98,15 @@ class ErebusBot(commands.Bot):
         await self.add_cog(CoreCog(self))
         logger.info("Loaded CoreCog")
 
-        # Initialize MCP and connect to servers
+        # Initialize MCP and connect to servers (Todoist)
+        # MCP tools are configured in Letta, but we keep the client for direct access
         await self._setup_mcp()
 
-        # Initialize conversation manager with model and MCP
-        if self._model:
-            self.conversation_manager = ConversationManager(
-                model=self._model,
-                mcp=self.mcp,
-            )
-            logger.info("Initialized conversation manager")
+        # Initialize vault first (needed for tool registry)
+        self._setup_vault()
 
-            # Initialize vault and register tools
-            self._setup_vault()
+        # Initialize EidolonMemory with Letta
+        await self._setup_eidolon()
 
         # Initialize scheduler
         self._setup_scheduler()
@@ -156,26 +146,23 @@ class ErebusBot(commands.Bot):
             self.mcp = None
 
     def _setup_vault(self) -> None:
-        """Initialize Obsidian vault and register tools with conversation manager.
+        """Initialize Obsidian vault and create tool registry.
 
-        Requires conversation_manager to be initialized first.
+        Creates a ToolRegistry with vault tools for EidolonMemory.
         """
         if not self.config.obsidian_vault_path:
             logger.info("Vault not configured (OBSIDIAN_VAULT_PATH not set)")
-            return
-
-        if not self.conversation_manager:
-            logger.warning("Cannot setup vault: conversation_manager not initialized")
             return
 
         try:
             vault_config = VaultConfig.from_settings(self.config)
             self.vault = Vault(vault_config)
 
-            # Register vault tools with conversation manager
+            # Create tool registry with vault tools
+            self._tool_registry = ToolRegistry()
             tool_definitions = get_vault_tool_definitions()
             executor = VaultToolExecutor(self.vault)
-            self.conversation_manager.register_native_tools(tool_definitions, executor)
+            self._tool_registry.register(tool_definitions, executor)
 
             logger.info(f"Initialized vault at {self.config.obsidian_vault_path}")
 
@@ -186,6 +173,44 @@ class ErebusBot(commands.Bot):
         except Exception as e:
             logger.exception(f"Failed to initialize vault: {e}")
             self.vault = None
+
+    async def _setup_eidolon(self) -> None:
+        """Initialize EidolonMemory with Letta.
+
+        Creates an EidolonMemory instance configured with the tool registry.
+        """
+        # Check if Letta is configured
+        if not self.config.letta_api_url:
+            logger.warning(
+                "LETTA_API_URL not set - EidolonMemory disabled. "
+                "Start the Letta server and configure LETTA_API_URL to enable."
+            )
+            return
+
+        try:
+            eidolon_config = EidolonConfig(
+                base_url=self.config.letta_api_url,
+                api_key=self.config.letta_api_key,
+                default_timezone=self.config.scheduler_timezone,
+            )
+
+            self.eidolon = EidolonMemory(
+                config=eidolon_config,
+                tool_registry=self._tool_registry,
+            )
+
+            # Verify connection
+            if self.eidolon.health_check():
+                logger.info(f"EidolonMemory connected to Letta at {self.config.letta_api_url}")
+            else:
+                logger.warning(
+                    f"Letta server at {self.config.letta_api_url} is not responding. "
+                    "EidolonMemory initialized but may not work until server is available."
+                )
+
+        except Exception as e:
+            logger.exception(f"Failed to initialize EidolonMemory: {e}")
+            self.eidolon = None
 
     def _setup_scheduler(self) -> None:
         """Initialize the job scheduler and register jobs.
@@ -221,7 +246,7 @@ class ErebusBot(commands.Bot):
 
         # Set resources that are available now
         self.scheduler.set_resources(
-            conversation_manager=self.conversation_manager,
+            eidolon=self.eidolon,
             vault=self.vault,
             mcp=self.mcp,
         )
@@ -321,7 +346,7 @@ class ErebusBot(commands.Bot):
             await self._handle_ai_message(message)
 
     async def _handle_ai_message(self, message: discord.Message) -> None:
-        """Handle a message by routing it to the AI model.
+        """Handle a message by routing it to EidolonMemory (Letta).
 
         Security: This method performs its own authorization check as defense-in-depth,
         even though callers should have already verified the user is authorized.
@@ -337,11 +362,12 @@ class ErebusBot(commands.Bot):
             )
             return
 
-        # Check if AI is available
-        if not self.conversation_manager:
+        # Check if EidolonMemory is available
+        if not self.eidolon:
             await message.channel.send(
                 "*Erebus stirs but cannot speak...*\n\n"
-                "AI features are disabled. Please configure `CLAUDE_API_KEY` to enable me."
+                "AI features are disabled. Please start the Letta server and configure "
+                "`LETTA_API_URL` to enable me."
             )
             return
 
@@ -349,16 +375,18 @@ class ErebusBot(commands.Bot):
         async with message.channel.typing():
             try:
                 response = await asyncio.wait_for(
-                    self.conversation_manager.chat(
+                    self.eidolon.chat(
                         user_id=message.author.id,
                         message=message.content,
+                        user_name=message.author.display_name,
+                        timezone=self.config.scheduler_timezone,
                     ),
                     timeout=MODEL_REQUEST_TIMEOUT,
                 )
 
                 # Send the response
-                if response.content:
-                    await self._send_long_message(message.channel, response.content)
+                if response:
+                    await self._send_long_message(message.channel, response)
                 else:
                     # Model returned no content (shouldn't happen in normal chat)
                     logger.warning(f"Model returned empty response for user {message.author.id}")

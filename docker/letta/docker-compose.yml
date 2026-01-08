@@ -1,0 +1,55 @@
+# Letta Server with PostgreSQL
+#
+# Usage:
+#   cd docker/letta
+#   docker compose up -d
+#
+# Environment variables required (from .env in project root):
+#   ANTHROPIC_API_KEY - For Claude model access
+#   OPENAI_API_KEY - For embeddings (text-embedding-3-small)
+
+services:
+  letta:
+    image: letta/letta:latest
+    container_name: erebus-letta
+    ports:
+      - "8283:8283"
+    environment:
+      # Model API keys (passed from host environment)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Database connection
+      - LETTA_PG_URI=postgresql://letta:letta@postgres:5432/letta
+      # Server configuration
+      - LETTA_SERVER_HOST=0.0.0.0
+      - LETTA_SERVER_PORT=8283
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8283/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: erebus-postgres
+    environment:
+      - POSTGRES_USER=letta
+      - POSTGRES_PASSWORD=letta
+      - POSTGRES_DB=letta
+    volumes:
+      - letta_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U letta -d letta"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  letta_data:
+    name: erebus-letta-data
