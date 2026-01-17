@@ -116,7 +116,9 @@ class ToolRegistry:
         """
         self._tools.extend(tools)
         self._executors.append(executor)
+        tool_names = [t.name for t in tools]
         logger.info(f"Registered {len(tools)} native tools")
+        logger.debug(f"Registered tools: {tool_names}")
 
     @property
     def tools(self) -> list[ToolDefinition]:
@@ -141,10 +143,15 @@ class ToolRegistry:
         Raises:
             ValueError: If no executor can handle the tool.
         """
+        logger.debug(f"ToolRegistry.execute: {tool_name}")
         for executor in self._executors:
             if executor.can_handle(tool_name):
-                return await executor.execute(tool_name, arguments)
+                logger.debug(f"Found executor: {type(executor).__name__}")
+                result = await executor.execute(tool_name, arguments)
+                logger.debug(f"Executor returned {len(result)} chars")
+                return result
 
+        logger.debug(f"No executor found for tool: {tool_name}")
         raise ValueError(f"No executor found for tool: {tool_name}")
 
     def can_handle(self, tool_name: str) -> bool:

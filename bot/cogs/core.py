@@ -475,9 +475,7 @@ class CoreCog(commands.Cog, name="Core"):
         except RateLimitError as e:
             logger.warning(f"Rate limited during daily workflow: {e}")
             retry_msg = f" Try again in {e.retry_after:.0f}s." if e.retry_after else ""
-            await interaction.followup.send(
-                f"Rate limited by AI provider.{retry_msg}"
-            )
+            await interaction.followup.send(f"Rate limited by AI provider.{retry_msg}")
 
         except ModelError as e:
             logger.exception(f"Model error during daily workflow: {e}")
@@ -570,9 +568,7 @@ class CoreCog(commands.Cog, name="Core"):
 
         except TimeoutError:
             logger.error(f"Idea workflow timed out for {interaction.user}")
-            await interaction.followup.send(
-                "The idea capture took too long. Please try again."
-            )
+            await interaction.followup.send("The idea capture took too long. Please try again.")
 
         except RateLimitError as e:
             logger.warning(f"Rate limited during idea capture: {e}")
@@ -587,9 +583,7 @@ class CoreCog(commands.Cog, name="Core"):
 
         except Exception as e:
             logger.exception(f"Unexpected error in idea capture: {e}")
-            await interaction.followup.send(
-                "Something went wrong. Please try again later."
-            )
+            await interaction.followup.send("Something went wrong. Please try again later.")
 
     @app_commands.command(
         name="capture",
@@ -672,9 +666,7 @@ class CoreCog(commands.Cog, name="Core"):
 
         except TimeoutError:
             logger.error(f"Capture workflow timed out for {interaction.user}")
-            await interaction.followup.send(
-                "The task capture took too long. Please try again."
-            )
+            await interaction.followup.send("The task capture took too long. Please try again.")
 
         except RateLimitError as e:
             logger.warning(f"Rate limited during task capture: {e}")
@@ -689,17 +681,13 @@ class CoreCog(commands.Cog, name="Core"):
 
         except Exception as e:
             logger.exception(f"Unexpected error in task capture: {e}")
-            await interaction.followup.send(
-                "Something went wrong. Please try again later."
-            )
+            await interaction.followup.send("Something went wrong. Please try again later.")
 
     @app_commands.command(
         name="sync",
         description="Sync task status between Obsidian and Todoist",
     )
-    @app_commands.describe(
-        mode="Sync mode: quick (default), end-of-day, or project"
-    )
+    @app_commands.describe(mode="Sync mode: quick (default), end-of-day, or project")
     @app_commands.choices(
         mode=[
             app_commands.Choice(name="Quick sync (just completion status)", value="quick"),
@@ -779,9 +767,7 @@ class CoreCog(commands.Cog, name="Core"):
 
         except TimeoutError:
             logger.error(f"Sync workflow timed out for {interaction.user}")
-            await interaction.followup.send(
-                "The sync took too long. Please try again."
-            )
+            await interaction.followup.send("The sync took too long. Please try again.")
 
         except RateLimitError as e:
             logger.warning(f"Rate limited during sync: {e}")
@@ -790,15 +776,11 @@ class CoreCog(commands.Cog, name="Core"):
 
         except ModelError as e:
             logger.exception(f"Model error during sync: {e}")
-            await interaction.followup.send(
-                "An error occurred while syncing. Please try again."
-            )
+            await interaction.followup.send("An error occurred while syncing. Please try again.")
 
         except Exception as e:
             logger.exception(f"Unexpected error in sync: {e}")
-            await interaction.followup.send(
-                "Something went wrong. Please try again later."
-            )
+            await interaction.followup.send("Something went wrong. Please try again later.")
 
     @app_commands.command(
         name="weekly",
@@ -860,9 +842,7 @@ class CoreCog(commands.Cog, name="Core"):
 
         except TimeoutError:
             logger.error(f"Weekly review timed out for {interaction.user}")
-            await interaction.followup.send(
-                "The weekly review took too long. Please try again."
-            )
+            await interaction.followup.send("The weekly review took too long. Please try again.")
 
         except RateLimitError as e:
             logger.warning(f"Rate limited during weekly review: {e}")
@@ -877,17 +857,13 @@ class CoreCog(commands.Cog, name="Core"):
 
         except Exception as e:
             logger.exception(f"Unexpected error in weekly review: {e}")
-            await interaction.followup.send(
-                "Something went wrong. Please try again later."
-            )
+            await interaction.followup.send("Something went wrong. Please try again later.")
 
     @app_commands.command(
         name="journal",
         description="Add a journal entry to today's daily note",
     )
-    @app_commands.describe(
-        entry="Optional: Your journal entry text (if omitted, you'll be asked)"
-    )
+    @app_commands.describe(entry="Optional: Your journal entry text (if omitted, you'll be asked)")
     @is_allowed_user()
     @is_dm_channel()
     async def journal(
@@ -928,7 +904,9 @@ class CoreCog(commands.Cog, name="Core"):
             entry_context = f'The user provided this entry:\n\n"{entry}"'
             logger.info(f"Journal entry started by {interaction.user} (with text)")
         else:
-            entry_context = "No entry text provided. Ask the user what they'd like to journal about."
+            entry_context = (
+                "No entry text provided. Ask the user what they'd like to journal about."
+            )
             logger.info(f"Journal entry started by {interaction.user} (interactive)")
 
         try:
@@ -956,9 +934,7 @@ class CoreCog(commands.Cog, name="Core"):
 
         except TimeoutError:
             logger.error(f"Journal entry timed out for {interaction.user}")
-            await interaction.followup.send(
-                "The journal entry took too long. Please try again."
-            )
+            await interaction.followup.send("The journal entry took too long. Please try again.")
 
         except RateLimitError as e:
             logger.warning(f"Rate limited during journal entry: {e}")
@@ -967,15 +943,58 @@ class CoreCog(commands.Cog, name="Core"):
 
         except ModelError as e:
             logger.exception(f"Model error during journal entry: {e}")
-            await interaction.followup.send(
-                "An error occurred while journaling. Please try again."
-            )
+            await interaction.followup.send("An error occurred while journaling. Please try again.")
 
         except Exception as e:
             logger.exception(f"Unexpected error in journal entry: {e}")
-            await interaction.followup.send(
-                "Something went wrong. Please try again later."
+            await interaction.followup.send("Something went wrong. Please try again later.")
+
+    @app_commands.command(name="reset", description="[DEV] Reset your Erebus agent")
+    async def reset(self, interaction: discord.Interaction) -> None:
+        """Reset the user's Letta agent (development only).
+
+        Deletes the agent and all its memory, forcing a fresh start.
+        Only available in development mode.
+
+        Args:
+            interaction: The Discord interaction.
+        """
+        # Only allow in development mode
+        if not self.bot.config.is_development:
+            await interaction.response.send_message(
+                "This command is only available in development mode.",
+                ephemeral=True,
             )
+            return
+
+        if not self.bot.eidolon:
+            await interaction.response.send_message(
+                "EidolonMemory is not configured.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(thinking=True)
+        logger.info(f"Agent reset requested by {interaction.user}")
+
+        try:
+            deleted = await self.bot.eidolon.clear_agent(interaction.user.id)
+
+            if deleted:
+                await interaction.followup.send(
+                    "*The shadow dissolves into the void...*\n\n"
+                    "Your Erebus agent has been reset. A new agent will be created "
+                    "on your next message."
+                )
+                logger.info(f"Agent reset completed for {interaction.user}")
+            else:
+                await interaction.followup.send(
+                    "*There is nothing to reset...*\n\nNo agent found for your user ID."
+                )
+
+        except Exception as e:
+            logger.exception(f"Failed to reset agent: {e}")
+            await interaction.followup.send(f"Failed to reset agent: {e}")
 
     async def _send_long_followup(
         self,
@@ -1024,6 +1043,7 @@ class CoreCog(commands.Cog, name="Core"):
     @sync.error
     @weekly.error
     @journal.error
+    @reset.error
     async def command_error_handler(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ) -> None:

@@ -33,6 +33,10 @@ from agents.eidolon.memory import (
     PERSONA_LABEL,
     create_human_block,
 )
+from agents.eidolon.system_tools import (
+    SystemToolExecutor,
+    get_system_tool_definitions,
+)
 from agents.eidolon.tools import (
     NativeToolExecutor,
     ToolRegistry,
@@ -59,4 +63,7 @@ __all__ = [
     "convert_to_letta_tool_format",
     "convert_tools_to_letta_format",
     "get_tool_names",
+    # System tools
+    "SystemToolExecutor",
+    "get_system_tool_definitions",
 ]

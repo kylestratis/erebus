@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from letta_client import Letta
+from letta_client import AsyncLetta
 
 from agents.eidolon.memory import (
     CONTEXT_BLOCK,
@@ -72,6 +72,8 @@ class EidolonMemory:
 
     # Maximum tool execution iterations to prevent infinite loops
     MAX_TOOL_ITERATIONS = 10
+    # Timeout for individual tool execution in seconds
+    TOOL_EXECUTION_TIMEOUT = 30.0
 
     def __init__(
         self,
@@ -89,14 +91,18 @@ class EidolonMemory:
         self.config = config or EidolonConfig()
         self.tool_registry = tool_registry or ToolRegistry()
 
-        # Initialize Letta client
-        self.client = Letta(
+        # Initialize async Letta client
+        self.client = AsyncLetta(
             base_url=self.config.base_url,
-            token=self.config.api_key,
+            api_key=self.config.api_key,
         )
 
         # Cache of user_id -> agent_id mappings
         self._agent_cache: dict[int, str] = {}
+
+        # Tool registration state (lazy initialization)
+        self._tool_ids: list[str] = []
+        self._tools_registered: bool = False
 
         logger.info(f"EidolonMemory initialized with Letta at {self.config.base_url}")
 
@@ -116,6 +122,9 @@ class EidolonMemory:
         Returns:
             Agent ID for the user.
         """
+        # Ensure tools are registered with Letta (needed for both new and existing agents)
+        await self._ensure_tools_registered()
+
         # Check cache first
         if user_id in self._agent_cache:
             return self._agent_cache[user_id]
@@ -127,6 +136,10 @@ class EidolonMemory:
         if existing:
             self._agent_cache[user_id] = existing.id
             logger.info(f"Found existing agent for user {user_id}: {existing.id}")
+
+            # Update agent's tools to include any new ones
+            await self._sync_agent_tools(existing.id)
+
             return existing.id
 
         # Create new agent
@@ -170,10 +183,12 @@ class EidolonMemory:
         )
 
         # Send message to agent
-        response = self.client.agents.messages.create(
+        logger.debug(f"Sending message to agent {agent_id}: {message[:100]}...")
+        response = await self.client.agents.messages.create(
             agent_id=agent_id,
             messages=[{"role": "user", "content": message}],
         )
+        logger.debug(f"Received response from Letta: {type(response).__name__}")
 
         # Handle tool execution loop
         iterations = 0
@@ -183,9 +198,11 @@ class EidolonMemory:
 
             if tool_call is None:
                 # No function call, we have a final response
+                logger.debug("No tool call in response, returning final text")
                 break
 
             tool_name, tool_args, call_id = tool_call
+            logger.debug(f"Extracted tool call: {tool_name} (id={call_id}) args={tool_args}")
 
             # Check if this is a native tool we handle
             if not self.tool_registry.can_handle(tool_name):
@@ -193,25 +210,48 @@ class EidolonMemory:
                 logger.debug(f"Tool {tool_name} not in registry, skipping")
                 break
 
-            # Execute tool locally
+            # Execute tool locally with timeout
             logger.info(f"Executing native tool: {tool_name}")
+            logger.debug(f"Tool arguments: {tool_args}")
+            status = "success"
             try:
-                result = await self.tool_registry.execute(tool_name, tool_args)
+                import asyncio
+
+                result = await asyncio.wait_for(
+                    self.tool_registry.execute(tool_name, tool_args),
+                    timeout=self.TOOL_EXECUTION_TIMEOUT,
+                )
+                logger.debug(f"Tool result ({len(result)} chars): {result[:200]}...")
+            except TimeoutError:
+                logger.error(f"Tool execution timed out: {tool_name}")
+                result = f"Tool execution timed out after {self.TOOL_EXECUTION_TIMEOUT}s"
+                status = "error"
             except Exception as e:
                 logger.exception(f"Tool execution failed: {tool_name}")
                 result = f"Error executing tool: {e}"
+                status = "error"
 
-            # Send result back to agent
-            response = self.client.agents.messages.create(
+            # Send result back as an approval response with ToolReturnParam
+            # This is required for tools registered with default_requires_approval=True
+            # The approval message tells Letta we executed the tool and provides the result
+            logger.debug(f"Sending tool result back to agent (iteration {iterations + 1})")
+            response = await self.client.agents.messages.create(
                 agent_id=agent_id,
                 messages=[
                     {
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "content": result,
+                        "type": "approval",
+                        "approvals": [
+                            {
+                                "type": "tool",
+                                "tool_call_id": call_id,
+                                "tool_return": result,
+                                "status": status,
+                            }
+                        ],
                     }
                 ],
             )
+            logger.debug(f"Received response after tool result: {type(response).__name__}")
 
             iterations += 1
 
@@ -219,7 +259,9 @@ class EidolonMemory:
             logger.warning(f"Tool execution loop hit max iterations for user {user_id}")
 
         # Extract text response
-        return self._extract_response_text(response)
+        final_text = self._extract_response_text(response)
+        logger.debug(f"Final response ({len(final_text)} chars): {final_text[:100]}...")
+        return final_text
 
     async def get_agent_id(self, user_id: int) -> str | None:
         """Get the agent ID for a user if it exists.
@@ -255,7 +297,7 @@ class EidolonMemory:
         if not agent_id:
             return False
 
-        self.client.agents.delete(agent_id=agent_id)
+        await self.client.agents.delete(agent_id=agent_id)
         self._agent_cache.pop(user_id, None)
 
         logger.info(f"Deleted agent for user {user_id}")
@@ -270,11 +312,25 @@ class EidolonMemory:
         Returns:
             AgentState if found, None otherwise.
         """
-        agents = self.client.agents.list()
-        for agent in agents:
-            if agent.name == name:
-                return agent
-        return None
+        try:
+            agents_page = await self.client.agents.list()
+
+            # Defensive: ensure we have a valid page with items
+            if not agents_page or not hasattr(agents_page, "items"):
+                logger.warning("agents.list() returned unexpected structure")
+                return None
+
+            # items could be None in some edge cases
+            items = agents_page.items or []
+
+            for agent in items:
+                if agent.name == name:
+                    return agent
+
+            return None
+        except Exception as e:
+            logger.exception(f"Failed to list agents while searching for {name}: {e}")
+            return None
 
     async def _create_agent(
         self,
@@ -283,6 +339,8 @@ class EidolonMemory:
         timezone: str,
     ) -> AgentState:
         """Create a new agent for a user.
+
+        Note: Caller must ensure _ensure_tools_registered() was called first.
 
         Args:
             user_id: Discord user ID.
@@ -308,13 +366,19 @@ class EidolonMemory:
             {"label": CONTEXT_LABEL, "value": CONTEXT_BLOCK},
         ]
 
-        # Create agent
-        agent = self.client.agents.create(
-            name=agent_name,
-            model=self.config.model,
-            embedding=self.config.embedding,
-            memory_blocks=memory_blocks,
-        )
+        # Create agent with tools if available
+        create_kwargs: dict[str, Any] = {
+            "name": agent_name,
+            "model": self.config.model,
+            "embedding": self.config.embedding,
+            "memory_blocks": memory_blocks,
+        }
+
+        if self._tool_ids:
+            create_kwargs["tool_ids"] = self._tool_ids
+            logger.info(f"Creating agent with {len(self._tool_ids)} tools")
+
+        agent = await self.client.agents.create(**create_kwargs)
 
         return agent
 
@@ -329,10 +393,154 @@ class EidolonMemory:
         """
         return f"erebus-{user_id}"
 
-    def _extract_function_call(
-        self, response: Any
-    ) -> tuple[str, dict[str, Any], str] | None:
+    async def _sync_agent_tools(self, agent_id: str) -> None:
+        """Sync an existing agent's tools with the current registry.
+
+        Adds any new tools that aren't already attached to the agent.
+        This ensures existing agents get new tools when the bot is updated.
+
+        Args:
+            agent_id: The agent ID to update.
+        """
+        if not self._tool_ids:
+            logger.debug("No tools to sync")
+            return
+
+        try:
+            # Get agent's current tools
+            agent = await self.client.agents.retrieve(agent_id=agent_id)
+            current_tool_ids = set(agent.tool_ids or [])
+            new_tool_ids = set(self._tool_ids)
+
+            # Find tools that need to be added
+            missing_tools = new_tool_ids - current_tool_ids
+
+            if not missing_tools:
+                logger.debug(f"Agent {agent_id} already has all {len(new_tool_ids)} tools")
+                return
+
+            # Add missing tools to agent
+            logger.info(
+                f"Syncing {len(missing_tools)} new tools to agent {agent_id} "
+                f"(had {len(current_tool_ids)}, now {len(new_tool_ids)})"
+            )
+
+            attached_count = 0
+            failed_tools: list[str] = []
+            for tool_id in missing_tools:
+                try:
+                    await self.client.agents.tools.attach(
+                        agent_id=agent_id,
+                        tool_id=tool_id,
+                    )
+                    attached_count += 1
+                    logger.debug(f"Attached tool {tool_id} to agent")
+                except Exception as e:
+                    failed_tools.append(tool_id)
+                    logger.warning(f"Failed to attach tool {tool_id}: {e}")
+
+            # Log summary
+            if failed_tools:
+                logger.warning(
+                    f"Tool sync completed with errors: {attached_count} attached, "
+                    f"{len(failed_tools)} failed ({', '.join(failed_tools)})"
+                )
+            else:
+                logger.info(f"Tool sync completed: {attached_count} tools attached")
+
+        except Exception as e:
+            logger.warning(f"Failed to sync tools for agent {agent_id}: {e}")
+
+    async def _ensure_tools_registered(self) -> None:
+        """Register native tools with Letta server (lazy initialization).
+
+        Tools are registered once on first use. Each tool is created with
+        a stub implementation since actual execution happens locally.
+        """
+        if self._tools_registered:
+            return
+
+        if not self.tool_registry.tools:
+            self._tools_registered = True
+            return
+
+        logger.info(f"Registering {len(self.tool_registry.tools)} tools with Letta...")
+
+        for tool_def in self.tool_registry.tools:
+            try:
+                import json
+
+                # Sanitize name to be a valid Python identifier (used as function name)
+                safe_name = self._sanitize_tool_name(tool_def.name)
+
+                # Escape description for use in docstring - json.dumps handles all
+                # special characters and quotes safely
+                safe_desc = json.dumps(tool_def.description)[1:-1]  # Strip outer quotes
+
+                # Create a stub function - actual execution happens locally
+                # The function name becomes the tool name in Letta
+                stub_code = f'''def {safe_name}(**kwargs):
+    """{safe_desc}"""
+    raise RuntimeError("This tool executes client-side only")
+'''
+                # Using upsert to handle existing tools gracefully
+                # Note: tool name is derived from function name in source_code
+                # default_requires_approval=True makes Letta return an approval
+                # request instead of executing server-side, allowing us to
+                # execute locally and send back the result.
+                tool = await self.client.tools.upsert(
+                    source_code=stub_code,
+                    json_schema={
+                        "name": safe_name,
+                        "description": tool_def.description,
+                        "parameters": tool_def.input_schema,
+                    },
+                    default_requires_approval=True,
+                )
+                self._tool_ids.append(tool.id)
+                logger.debug(f"Registered tool: {safe_name} (id={tool.id})")
+
+            except Exception as e:
+                logger.exception(f"Failed to register tool {tool_def.name}: {e}")
+
+        self._tools_registered = True
+        logger.info(f"Registered {len(self._tool_ids)} tools with Letta")
+
+    def _sanitize_tool_name(self, name: str) -> str:
+        """Sanitize a tool name to be a valid Python identifier.
+
+        Args:
+            name: Original tool name.
+
+        Returns:
+            Sanitized name safe for use in generated code.
+
+        Raises:
+            ValueError: If name cannot be sanitized to a valid identifier.
+        """
+        import keyword
+        import re
+
+        # Replace non-alphanumeric chars (except underscore) with underscore
+        sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+        # Ensure it doesn't start with a digit
+        if sanitized and sanitized[0].isdigit():
+            sanitized = "_" + sanitized
+        # Fallback if empty
+        if not sanitized:
+            sanitized = "tool"
+
+        # Check for Python keywords
+        if keyword.iskeyword(sanitized):
+            sanitized = f"{sanitized}_tool"
+
+        return sanitized
+
+    def _extract_function_call(self, response: Any) -> tuple[str, dict[str, Any], str] | None:
         """Extract function call from Letta response if present.
+
+        Looks for both approval_request_message (for client-side tools with
+        default_requires_approval=True) and tool_call_message (for server-side tools).
 
         Args:
             response: Letta API response.
@@ -342,34 +550,48 @@ class EidolonMemory:
             is present, None otherwise.
         """
         if not hasattr(response, "messages"):
+            logger.debug("Response has no 'messages' attribute")
             return None
 
-        for msg in response.messages:
-            # Check for function/tool call message types
-            # Letta uses different message types for tool calls
+        logger.debug(f"Response has {len(response.messages)} messages")
+        for i, msg in enumerate(response.messages):
             msg_type = getattr(msg, "message_type", None) or type(msg).__name__
+            logger.debug(f"  Message {i}: type={msg_type}, class={type(msg).__name__}")
 
-            if msg_type in ("function_call", "tool_call", "FunctionCallMessage"):
-                # Extract tool call details
-                name = getattr(msg, "function_call", {}).get("name") or getattr(
-                    msg, "name", None
-                )
-                args = getattr(msg, "function_call", {}).get("arguments") or getattr(
-                    msg, "arguments", {}
-                )
-                call_id = getattr(msg, "id", "") or getattr(msg, "tool_call_id", "")
+            # Check for client-side tools (approval_request_message) and
+            # server-side tools (tool_call_message)
+            if msg_type in ("approval_request_message", "tool_call_message"):
+                # Both message types have a tool_call attribute with the call details
+                tool_call = getattr(msg, "tool_call", None)
+                if tool_call is None:
+                    logger.debug(f"  Message {i} has no tool_call attribute")
+                    continue
 
-                if name:
-                    # Parse arguments if they're a string (JSON)
-                    if isinstance(args, str):
-                        import json
+                name = getattr(tool_call, "name", None)
+                args = getattr(tool_call, "arguments", "{}")
+                call_id = getattr(tool_call, "tool_call_id", None)
 
-                        try:
-                            args = json.loads(args)
-                        except json.JSONDecodeError:
-                            args = {}
+                logger.debug(f"  Found tool call: name={name}, call_id={call_id}")
 
-                    return (name, args, call_id)
+                # Validate required fields
+                if not name:
+                    logger.warning(f"  Tool call missing name in message {i}")
+                    continue
+                if not call_id:
+                    logger.warning(f"  Tool call {name} missing tool_call_id in message {i}")
+                    continue
+
+                # Parse arguments (stored as JSON string)
+                if isinstance(args, str):
+                    import json
+
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse tool arguments: {args}")
+                        args = {}
+
+                return (name, args, call_id)
 
         return None
 
@@ -382,15 +604,22 @@ class EidolonMemory:
         Returns:
             Text content from the response.
         """
-        # The response structure depends on Letta version
-        # Handle both possible formats
+        # Skip message types that don't contain user-facing text
+        skip_types = {
+            "approval_request_message",
+            "tool_call_message",
+            "tool_return_message",
+            "reasoning_message",
+            "hidden_reasoning_message",
+        }
+
         if hasattr(response, "messages"):
             for msg in response.messages:
-                # Skip function call messages
                 msg_type = getattr(msg, "message_type", None) or type(msg).__name__
-                if msg_type in ("function_call", "tool_call", "FunctionCallMessage"):
+                if msg_type in skip_types:
                     continue
 
+                # assistant_message contains the actual response to the user
                 if hasattr(msg, "content") and msg.content:
                     return msg.content
         elif hasattr(response, "content"):
@@ -399,7 +628,7 @@ class EidolonMemory:
         # Fallback: convert to string
         return str(response)
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Check if Letta server is healthy.
 
         Returns:
@@ -407,7 +636,7 @@ class EidolonMemory:
         """
         try:
             # Try to list agents as a health check
-            self.client.agents.list()
+            await self.client.agents.list()
             return True
         except Exception as e:
             logger.warning(f"Letta health check failed: {e}")

@@ -101,7 +101,7 @@ class Settings(BaseSettings):
 
     # Scheduler settings
     scheduler_timezone: str = Field(
-        default="America/Chicago",
+        default="America/New_York",
         description="Timezone for scheduled jobs (IANA timezone name)",
     )
     scheduler_enabled: bool = Field(

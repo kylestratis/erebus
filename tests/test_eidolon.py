@@ -5,7 +5,7 @@ Tests memory block definitions and EidolonMemory client (with mocked Letta).
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -97,48 +97,78 @@ class TestEidolonConfig:
         assert config.model == "custom-model"
         assert config.default_timezone == "Europe/London"
 
+    def test_default_model_has_valid_provider_format(self) -> None:
+        """Default model string follows provider/model-name format.
+
+        Letta requires models in 'provider/model' format. This test catches
+        typos that would cause 'provider not supported' errors at runtime.
+        """
+        from agents.eidolon.client import DEFAULT_EMBEDDING, DEFAULT_MODEL
+
+        # Verify format is provider/model
+        assert "/" in DEFAULT_MODEL, f"Model must be in 'provider/model' format: {DEFAULT_MODEL}"
+        assert "/" in DEFAULT_EMBEDDING, (
+            f"Embedding must be in 'provider/model' format: {DEFAULT_EMBEDDING}"
+        )
+
+        # Verify providers are known-supported
+        supported_providers = {"anthropic", "openai", "letta"}
+        model_provider = DEFAULT_MODEL.split("/")[0]
+        embed_provider = DEFAULT_EMBEDDING.split("/")[0]
+
+        assert model_provider in supported_providers, (
+            f"Model provider '{model_provider}' not in supported providers: {supported_providers}"
+        )
+        assert embed_provider in supported_providers, (
+            f"Embedding provider '{embed_provider}' not in supported providers: {supported_providers}"
+        )
+
 
 class TestEidolonMemory:
     """Tests for EidolonMemory client."""
 
     @pytest.fixture
     def mock_letta(self) -> MagicMock:
-        """Create a mock Letta client."""
+        """Create a mock AsyncLetta client with async methods."""
         mock = MagicMock()
-        # Mock agents.list() to return empty list
-        mock.agents.list.return_value = []
-        # Mock agents.create() to return an agent
+        # Mock agents.list() as async - returns AsyncArrayPage-like object with .items
+        mock_page = MagicMock()
+        mock_page.items = []
+        mock.agents.list = AsyncMock(return_value=mock_page)
+        # Mock agents.create() as async - returns an agent
         mock_agent = MagicMock()
         mock_agent.id = "test-agent-id"
         mock_agent.name = "erebus-123456"
-        mock.agents.create.return_value = mock_agent
-        # Mock messages.create() to return a response
+        mock.agents.create = AsyncMock(return_value=mock_agent)
+        # Mock agents.delete() as async
+        mock.agents.delete = AsyncMock()
+        # Mock messages.create() as async - returns a response
         mock_response = MagicMock()
         mock_response.messages = [MagicMock(content="Hello from Erebus!")]
-        mock.agents.messages.create.return_value = mock_response
+        mock.agents.messages.create = AsyncMock(return_value=mock_response)
         return mock
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     def test_init_creates_client(self, mock_letta_class: MagicMock) -> None:
-        """EidolonMemory creates Letta client on init."""
+        """EidolonMemory creates AsyncLetta client on init."""
         config = EidolonConfig(base_url="http://test:8283")
         EidolonMemory(config)
         mock_letta_class.assert_called_once_with(
             base_url="http://test:8283",
-            token=None,
+            api_key=None,
         )
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     def test_init_with_api_key(self, mock_letta_class: MagicMock) -> None:
-        """EidolonMemory passes API key to client."""
+        """EidolonMemory passes API key to AsyncLetta client."""
         config = EidolonConfig(api_key="test-key")
         EidolonMemory(config)
         mock_letta_class.assert_called_once_with(
             base_url="http://localhost:8283",
-            token="test-key",
+            api_key="test-key",
         )
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     @pytest.mark.asyncio
     async def test_get_or_create_agent_creates_new(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
@@ -156,17 +186,19 @@ class TestEidolonMemory:
         assert agent_id == "test-agent-id"
         mock_letta.agents.create.assert_called_once()
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     @pytest.mark.asyncio
     async def test_get_or_create_agent_returns_existing(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
     ) -> None:
         """get_or_create_agent returns existing agent if found."""
-        # Set up mock to return existing agent
+        # Set up mock to return existing agent via AsyncArrayPage-like object
         existing_agent = MagicMock()
         existing_agent.id = "existing-agent-id"
         existing_agent.name = "erebus-123456"
-        mock_letta.agents.list.return_value = [existing_agent]
+        mock_page = MagicMock()
+        mock_page.items = [existing_agent]
+        mock_letta.agents.list.return_value = mock_page
         mock_letta_class.return_value = mock_letta
 
         eidolon = EidolonMemory()
@@ -175,7 +207,7 @@ class TestEidolonMemory:
         assert agent_id == "existing-agent-id"
         mock_letta.agents.create.assert_not_called()
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     @pytest.mark.asyncio
     async def test_get_or_create_agent_uses_cache(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
@@ -192,7 +224,7 @@ class TestEidolonMemory:
         # Should only create once
         assert mock_letta.agents.create.call_count == 1
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     @pytest.mark.asyncio
     async def test_chat_returns_response(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
@@ -209,7 +241,28 @@ class TestEidolonMemory:
         assert response == "Hello from Erebus!"
         mock_letta.agents.messages.create.assert_called_once()
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_chat_uses_native_async_to_avoid_blocking(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """chat uses AsyncLetta for non-blocking operations.
+
+        This prevents Discord heartbeat timeouts when Letta responses are slow.
+        The AsyncLetta client provides native async support.
+        """
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        await eidolon.chat(user_id=123456, message="Hello!")
+
+        # Verify AsyncLetta was instantiated (native async, no thread pool needed)
+        mock_letta_class.assert_called_once()
+        # Verify async methods were actually awaited (not just called)
+        mock_letta.agents.messages.create.assert_awaited()
+        mock_letta.agents.list.assert_awaited()  # from get_or_create_agent
+
+    @patch("agents.eidolon.client.AsyncLetta")
     @pytest.mark.asyncio
     async def test_get_agent_id_returns_none_for_unknown(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
@@ -222,7 +275,7 @@ class TestEidolonMemory:
 
         assert agent_id is None
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     @pytest.mark.asyncio
     async def test_clear_agent_deletes_and_returns_true(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
@@ -239,7 +292,7 @@ class TestEidolonMemory:
         assert result is True
         mock_letta.agents.delete.assert_called_once()
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     @pytest.mark.asyncio
     async def test_clear_agent_returns_false_for_unknown(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
@@ -253,20 +306,22 @@ class TestEidolonMemory:
         assert result is False
         mock_letta.agents.delete.assert_not_called()
 
-    @patch("agents.eidolon.client.Letta")
-    def test_health_check_returns_true_when_healthy(
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_health_check_returns_true_when_healthy(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
     ) -> None:
         """health_check returns True when server is responding."""
         mock_letta_class.return_value = mock_letta
 
         eidolon = EidolonMemory()
-        result = eidolon.health_check()
+        result = await eidolon.health_check()
 
         assert result is True
 
-    @patch("agents.eidolon.client.Letta")
-    def test_health_check_returns_false_on_error(
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_health_check_returns_false_on_error(
         self, mock_letta_class: MagicMock, mock_letta: MagicMock
     ) -> None:
         """health_check returns False when server fails."""
@@ -274,7 +329,7 @@ class TestEidolonMemory:
         mock_letta_class.return_value = mock_letta
 
         eidolon = EidolonMemory()
-        result = eidolon.health_check()
+        result = await eidolon.health_check()
 
         assert result is False
 
@@ -284,7 +339,7 @@ class TestEidolonMemory:
         name = eidolon._get_agent_name(123456789)
         assert name == "erebus-123456789"
 
-    @patch("agents.eidolon.client.Letta")
+    @patch("agents.eidolon.client.AsyncLetta")
     def test_init_with_tool_registry(self, mock_letta_class: MagicMock) -> None:
         """EidolonMemory accepts optional tool registry."""
         from agents.eidolon import ToolRegistry
@@ -293,16 +348,57 @@ class TestEidolonMemory:
         eidolon = EidolonMemory(tool_registry=registry)
         assert eidolon.tool_registry is registry
 
-    @patch("agents.eidolon.client.Letta")
-    def test_init_creates_empty_registry_if_none(
-        self, mock_letta_class: MagicMock
-    ) -> None:
+    @patch("agents.eidolon.client.AsyncLetta")
+    def test_init_creates_empty_registry_if_none(self, mock_letta_class: MagicMock) -> None:
         """EidolonMemory creates empty registry if none provided."""
         from agents.eidolon import ToolRegistry
 
         eidolon = EidolonMemory()
         assert isinstance(eidolon.tool_registry, ToolRegistry)
         assert len(eidolon.tool_registry.tools) == 0
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_create_agent_registers_tools_with_letta(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """_create_agent registers tools and passes tool_ids to Letta."""
+        from agents.eidolon import ToolRegistry
+        from agents.models.base import ToolDefinition
+
+        # Set up registry with a tool
+        registry = ToolRegistry()
+        tool_def = ToolDefinition(
+            name="test_tool",
+            description="A test tool",
+            input_schema={"type": "object", "properties": {}},
+        )
+
+        class MockExecutor:
+            def can_handle(self, tool_name: str) -> bool:
+                return tool_name == "test_tool"
+
+            async def execute(self, tool_name: str, arguments: dict) -> str:
+                return "result"
+
+        registry.register([tool_def], MockExecutor())
+
+        # Mock tools.upsert to return a tool with an ID
+        mock_tool = MagicMock()
+        mock_tool.id = "tool-123"
+        mock_letta.tools.upsert = AsyncMock(return_value=mock_tool)
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory(tool_registry=registry)
+        await eidolon.get_or_create_agent(user_id=123456)
+
+        # Verify tool was registered
+        mock_letta.tools.upsert.assert_awaited_once()
+        # Verify agent was created with tool_ids
+        mock_letta.agents.create.assert_awaited_once()
+        create_call = mock_letta.agents.create.call_args
+        assert "tool_ids" in create_call.kwargs
+        assert create_call.kwargs["tool_ids"] == ["tool-123"]
 
 
 class TestToolRegistry:

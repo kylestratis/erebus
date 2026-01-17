@@ -3,9 +3,10 @@
 Provides connectivity to MCP servers for tool access.
 """
 
-from agents.mcp.client import MCPClientManager, MCPServerConfig
+from agents.mcp.client import MCPClientManager, MCPServerConfig, MCPToolExecutor
 
 __all__ = [
     "MCPClientManager",
     "MCPServerConfig",
+    "MCPToolExecutor",
 ]

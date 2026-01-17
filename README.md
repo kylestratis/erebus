@@ -30,11 +30,10 @@ Letta Server (Docker)
     │   ├── Archival Memory (learned patterns)
     │   └── Recall Memory (conversation history)
     │
-    ├── Native Tools (executed by bot)
-    │   └── Vault tools (Obsidian operations)
-    │
-    └── MCP Tools (executed by Letta)
-        └── Todoist MCP server
+    └── Tools (client-side execution)
+        ├── Vault tools (Obsidian operations)
+        ├── MCP tools (Todoist via MCP server)
+        └── System tools (introspection)
     │
     ▼
 PostgreSQL (state persistence)
@@ -133,6 +132,9 @@ uv run pytest
 
 # Start the bot
 uv run python -m bot
+
+# Start with debug logging
+uv run python -m bot --debug
 ```
 
 ### Stopping Services
@@ -223,6 +225,13 @@ journalctl -u erebus -f  # if running as systemd service
 
 Erebus uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration management with automatic validation.
 
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `--debug` | Enable debug logging (overrides LOG_LEVEL) |
+| `--log-level LEVEL` | Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+
 ### Environment Variables
 
 #### Required
@@ -232,11 +241,17 @@ Erebus uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydant
 | `DISCORD_BOT_TOKEN` | Discord bot token from the Developer Portal |
 | `DISCORD_USER_ID` | Your Discord user ID (numeric) |
 
+#### Required for AI Features
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Anthropic API key (used by Letta for Claude) |
+| `OPENAI_API_KEY` | OpenAI API key (used by Letta for embeddings) |
+
 #### Recommended
 
 | Variable | Description |
 |----------|-------------|
-| `CLAUDE_API_KEY` | Anthropic API key for AI features |
 | `TODOIST_API_TOKEN` | Todoist API token for task management |
 
 #### Optional

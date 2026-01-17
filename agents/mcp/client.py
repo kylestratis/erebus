@@ -276,6 +276,45 @@ class MCPClientManager:
             raise RuntimeError(f"Tool call failed: {e}") from e
 
 
+class MCPToolExecutor:
+    """Executor that routes tool calls to appropriate MCP servers.
+
+    Implements NativeToolExecutor protocol to integrate MCP tools
+    with the ToolRegistry used by EidolonMemory.
+    """
+
+    def __init__(self, mcp_manager: MCPClientManager) -> None:
+        """Initialize with MCP client manager.
+
+        Args:
+            mcp_manager: The MCP client manager to route calls to.
+        """
+        self._mcp = mcp_manager
+
+    def can_handle(self, tool_name: str) -> bool:
+        """Check if any connected MCP server can handle this tool.
+
+        Args:
+            tool_name: Name of the tool to check.
+
+        Returns:
+            True if an MCP server has this tool registered.
+        """
+        return self._mcp.can_handle_tool(tool_name)
+
+    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        """Execute a tool via the appropriate MCP server.
+
+        Args:
+            tool_name: Name of the tool to execute.
+            arguments: Tool arguments.
+
+        Returns:
+            Tool execution result as a string.
+        """
+        return await self._mcp.call_tool(tool_name, arguments)
+
+
 def create_todoist_config(api_key: str) -> MCPServerConfig:
     """Create configuration for the Todoist MCP server.
 

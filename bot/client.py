@@ -16,6 +16,7 @@ from discord.ext import commands
 
 from agents import (
     MCPClientManager,
+    MCPToolExecutor,
     ModelError,
     RateLimitError,
     create_todoist_config,
@@ -23,7 +24,9 @@ from agents import (
 from agents.eidolon import (
     EidolonConfig,
     EidolonMemory,
+    SystemToolExecutor,
     ToolRegistry,
+    get_system_tool_definitions,
 )
 from agents.vault import (
     Vault,
@@ -91,6 +94,20 @@ class ErebusBot(commands.Bot):
         """Async setup called after login but before connecting.
 
         Loads cogs, initializes MCP connections, and syncs commands.
+
+        Setup Order (IMPORTANT):
+        The setup order matters because of tool registration dependencies:
+
+        1. _setup_mcp() - Connect to MCP servers (Todoist)
+        2. _setup_vault() - Create tool registry, register vault + MCP tools
+        3. _setup_scheduler() - Initialize scheduler (needed by system tools)
+        4. _setup_system_tools() - Register system introspection tools
+        5. _setup_eidolon() - Create EidolonMemory with complete tool registry
+        6. set_resources() - Give scheduler access to eidolon
+
+        EidolonMemory registers tools with Letta lazily on first agent creation.
+        All tools must be in the registry BEFORE _setup_eidolon() is called,
+        otherwise they won't be available to the agent.
         """
         # Load core cog with basic commands
         from bot.cogs.core import CoreCog
@@ -102,14 +119,25 @@ class ErebusBot(commands.Bot):
         # MCP tools are configured in Letta, but we keep the client for direct access
         await self._setup_mcp()
 
-        # Initialize vault first (needed for tool registry)
+        # Initialize vault (creates tool registry, registers vault + MCP tools)
         self._setup_vault()
 
-        # Initialize EidolonMemory with Letta
+        # Initialize scheduler (needed for system tools)
+        self._setup_scheduler()
+
+        # Register system introspection tools (needs scheduler reference)
+        self._setup_system_tools()
+
+        # Initialize EidolonMemory with Letta (must be after all tools are registered)
         await self._setup_eidolon()
 
-        # Initialize scheduler
-        self._setup_scheduler()
+        # Set all resources on scheduler (now that eidolon exists)
+        if self.scheduler:
+            self.scheduler.set_resources(
+                eidolon=self.eidolon,
+                vault=self.vault,
+                mcp=self.mcp,
+            )
 
         # Sync commands
         if self.config.discord_guild_id:
@@ -148,31 +176,40 @@ class ErebusBot(commands.Bot):
     def _setup_vault(self) -> None:
         """Initialize Obsidian vault and create tool registry.
 
-        Creates a ToolRegistry with vault tools for EidolonMemory.
+        Creates a ToolRegistry with vault tools and MCP tools for EidolonMemory.
         """
-        if not self.config.obsidian_vault_path:
+        # Always create tool registry (even without vault, for MCP tools)
+        self._tool_registry = ToolRegistry()
+
+        # Register vault tools if configured
+        if self.config.obsidian_vault_path:
+            try:
+                vault_config = VaultConfig.from_settings(self.config)
+                self.vault = Vault(vault_config)
+
+                tool_definitions = get_vault_tool_definitions()
+                executor = VaultToolExecutor(self.vault)
+                self._tool_registry.register(tool_definitions, executor)
+
+                logger.info(f"Initialized vault at {self.config.obsidian_vault_path}")
+
+            except VaultError as e:
+                logger.error(f"Vault configuration error: {e}. Check OBSIDIAN_VAULT_PATH.")
+                self.vault = None
+
+            except Exception as e:
+                logger.exception(f"Failed to initialize vault: {e}")
+                self.vault = None
+        else:
             logger.info("Vault not configured (OBSIDIAN_VAULT_PATH not set)")
-            return
 
-        try:
-            vault_config = VaultConfig.from_settings(self.config)
-            self.vault = Vault(vault_config)
-
-            # Create tool registry with vault tools
-            self._tool_registry = ToolRegistry()
-            tool_definitions = get_vault_tool_definitions()
-            executor = VaultToolExecutor(self.vault)
-            self._tool_registry.register(tool_definitions, executor)
-
-            logger.info(f"Initialized vault at {self.config.obsidian_vault_path}")
-
-        except VaultError as e:
-            logger.error(f"Vault configuration error: {e}. Check OBSIDIAN_VAULT_PATH.")
-            self.vault = None
-
-        except Exception as e:
-            logger.exception(f"Failed to initialize vault: {e}")
-            self.vault = None
+        # Register MCP tools if available
+        if self.mcp and self.mcp.is_initialized:
+            mcp_tools = self.mcp.get_all_tools()
+            if mcp_tools:
+                mcp_executor = MCPToolExecutor(self.mcp)
+                self._tool_registry.register(mcp_tools, mcp_executor)
+                logger.info(f"Registered {len(mcp_tools)} MCP tools")
 
     async def _setup_eidolon(self) -> None:
         """Initialize EidolonMemory with Letta.
@@ -200,7 +237,7 @@ class ErebusBot(commands.Bot):
             )
 
             # Verify connection
-            if self.eidolon.health_check():
+            if await self.eidolon.health_check():
                 logger.info(f"EidolonMemory connected to Letta at {self.config.letta_api_url}")
             else:
                 logger.warning(
@@ -244,14 +281,26 @@ class ErebusBot(commands.Bot):
         weekly_review_job.enabled = self.config.job_weekly_review_enabled
         self.scheduler.register(weekly_review_job)
 
-        # Set resources that are available now
-        self.scheduler.set_resources(
-            eidolon=self.eidolon,
-            vault=self.vault,
+        logger.info(f"Scheduler initialized with {len(self.scheduler.jobs)} jobs")
+
+    def _setup_system_tools(self) -> None:
+        """Register system introspection tools.
+
+        Must be called after scheduler is set up so system_status
+        can report on scheduled jobs.
+        """
+        if not self._tool_registry:
+            logger.debug("No tool registry - skipping system tools")
+            return
+
+        system_tools = get_system_tool_definitions()
+        system_executor = SystemToolExecutor(
+            tool_registry=self._tool_registry,
+            scheduler=self.scheduler,
             mcp=self.mcp,
         )
-
-        logger.info(f"Scheduler initialized with {len(self.scheduler.jobs)} jobs")
+        self._tool_registry.register(system_tools, system_executor)
+        logger.info(f"Registered {len(system_tools)} system tools")
 
     async def _start_scheduler(self) -> None:
         """Start the scheduler after bot is ready.

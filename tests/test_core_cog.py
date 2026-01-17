@@ -64,9 +64,7 @@ class TestWorkflowPrompts:
 
     def test_capture_prompt_format_with_task(self) -> None:
         """Capture prompt should format correctly with a task."""
-        formatted = CAPTURE_WORKFLOW_PROMPT.format(
-            task_description="Buy groceries P1 tomorrow"
-        )
+        formatted = CAPTURE_WORKFLOW_PROMPT.format(task_description="Buy groceries P1 tomorrow")
         assert "Buy groceries P1 tomorrow" in formatted
         assert "{task_description}" not in formatted
 

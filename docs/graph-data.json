@@ -263,6 +263,171 @@
       "created_at": "2026-01-07T22:56:26.584596-05:00",
       "updated_at": "2026-01-07T22:56:26.584596-05:00",
       "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 25,
+      "change_id": "587b1d54-4aa5-40cf-909d-bad61fd5bd63",
+      "node_type": "goal",
+      "title": "Fix AsyncLetta integration runtime errors",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T00:58:09.360622-05:00",
+      "updated_at": "2026-01-08T00:58:09.360622-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95,\"prompt\":\"Fix Letta integration: AsyncArrayPage pagination, docker env vars, security\"}"
+    },
+    {
+      "id": 26,
+      "change_id": "ff69c8da-13f1-43d7-980a-67df92d4ff99",
+      "node_type": "action",
+      "title": "Fixed AsyncArrayPage mock in tests",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T00:58:14.478819-05:00",
+      "updated_at": "2026-01-08T00:58:14.478819-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"files\":[\"tests/test_eidolon.py\"]}"
+    },
+    {
+      "id": 27,
+      "change_id": "41d30db6-8a16-406f-9fbf-e828ffce5134",
+      "node_type": "decision",
+      "title": "Code review findings",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T00:58:19.388634-05:00",
+      "updated_at": "2026-01-08T00:58:19.388634-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 28,
+      "change_id": "3ed024e2-16ab-48d0-afc5-0bead50b17d0",
+      "node_type": "action",
+      "title": "Fixed docker security - only pass required API keys",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T00:58:26.942058-05:00",
+      "updated_at": "2026-01-08T00:58:26.942058-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"files\":[\"docker/letta/docker-compose.yml\"]}"
+    },
+    {
+      "id": 29,
+      "change_id": "d589bcac-eea5-4fe5-aa92-8641ebbc4cdd",
+      "node_type": "action",
+      "title": "Added defensive error handling to _find_agent_by_name",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T00:58:31.818035-05:00",
+      "updated_at": "2026-01-08T00:58:31.818035-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"files\":[\"agents/eidolon/client.py\"]}"
+    },
+    {
+      "id": 30,
+      "change_id": "23fd1b56-6506-40ae-b3a8-ec178ac29b54",
+      "node_type": "action",
+      "title": "Updated tests to use assert_awaited for async verification",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T00:58:36.774705-05:00",
+      "updated_at": "2026-01-08T00:58:36.774705-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"files\":[\"tests/test_eidolon.py\"]}"
+    },
+    {
+      "id": 31,
+      "change_id": "59e11a19-4af3-4816-889d-83f41d3b3625",
+      "node_type": "action",
+      "title": "Added docker-compose env-file documentation",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T00:58:36.794208-05:00",
+      "updated_at": "2026-01-08T00:58:36.794208-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"files\":[\"docker/letta/docker-compose.yml\"]}"
+    },
+    {
+      "id": 32,
+      "change_id": "dd52ad32-95c4-43af-887b-9478ae21df6a",
+      "node_type": "outcome",
+      "title": "All tests pass, code review complete, ready for testing",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T00:58:41.134485-05:00",
+      "updated_at": "2026-01-08T00:58:41.134485-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 33,
+      "change_id": "17a710af-890b-42fc-aa2c-bf521939ab05",
+      "node_type": "observation",
+      "title": "Erebus agent missing Obsidian vault tools",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T01:02:48.944306-05:00",
+      "updated_at": "2026-01-08T01:02:48.944306-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 34,
+      "change_id": "cc9b59cc-24fc-46b1-b374-862cb096490a",
+      "node_type": "goal",
+      "title": "Register vault tools with Letta agent",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T01:03:26.936371-05:00",
+      "updated_at": "2026-01-08T01:03:26.936371-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":85}"
+    },
+    {
+      "id": 35,
+      "change_id": "0fba838b-01b0-4442-84c8-93f2f3706e32",
+      "node_type": "action",
+      "title": "Implemented tool registration with Letta",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T02:05:25.359978-05:00",
+      "updated_at": "2026-01-08T02:05:25.359978-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":85,\"files\":[\"agents/eidolon/client.py\"]}"
+    },
+    {
+      "id": 36,
+      "change_id": "69ac35ac-64f2-4f4e-a2f3-7108f7f2846c",
+      "node_type": "outcome",
+      "title": "All tests pass after tool registration implementation",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T02:05:49.618779-05:00",
+      "updated_at": "2026-01-08T02:05:49.618779-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 37,
+      "change_id": "08e3c74e-071d-4334-8331-ee98fa66a569",
+      "node_type": "action",
+      "title": "Added test for tool registration",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T02:06:42.736576-05:00",
+      "updated_at": "2026-01-08T02:06:42.736576-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95,\"files\":[\"tests/test_eidolon.py\"]}"
+    },
+    {
+      "id": 38,
+      "change_id": "a61b0f24-16a5-406c-9d17-620267d0094e",
+      "node_type": "decision",
+      "title": "Code review: tool registration security fix needed",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T02:08:15.338895-05:00",
+      "updated_at": "2026-01-08T02:08:15.338895-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 39,
+      "change_id": "75ffe9e7-f389-4943-a708-0ad7e3be881b",
+      "node_type": "action",
+      "title": "Fixed security: sanitize tool name and escape description",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T02:08:55.221114-05:00",
+      "updated_at": "2026-01-08T02:08:55.221114-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"files\":[\"agents/eidolon/client.py\"]}"
     }
   ],
   "edges": [
@@ -496,6 +661,160 @@
       "weight": 1.0,
       "rationale": "Result of implementation",
       "created_at": "2026-01-07T22:56:30.016940-05:00"
+    },
+    {
+      "id": 22,
+      "from_node_id": 25,
+      "to_node_id": 26,
+      "from_change_id": "587b1d54-4aa5-40cf-909d-bad61fd5bd63",
+      "to_change_id": "ff69c8da-13f1-43d7-980a-67df92d4ff99",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fix pagination mock",
+      "created_at": "2026-01-08T00:58:19.360172-05:00"
+    },
+    {
+      "id": 23,
+      "from_node_id": 25,
+      "to_node_id": 27,
+      "from_change_id": "587b1d54-4aa5-40cf-909d-bad61fd5bd63",
+      "to_change_id": "41d30db6-8a16-406f-9fbf-e828ffce5134",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Review before merge",
+      "created_at": "2026-01-08T00:58:19.397255-05:00"
+    },
+    {
+      "id": 24,
+      "from_node_id": 27,
+      "to_node_id": 28,
+      "from_change_id": "41d30db6-8a16-406f-9fbf-e828ffce5134",
+      "to_change_id": "3ed024e2-16ab-48d0-afc5-0bead50b17d0",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Critical security fix",
+      "created_at": "2026-01-08T00:58:26.947119-05:00"
+    },
+    {
+      "id": 25,
+      "from_node_id": 27,
+      "to_node_id": 29,
+      "from_change_id": "41d30db6-8a16-406f-9fbf-e828ffce5134",
+      "to_change_id": "d589bcac-eea5-4fe5-aa92-8641ebbc4cdd",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "High priority fix",
+      "created_at": "2026-01-08T00:58:31.824002-05:00"
+    },
+    {
+      "id": 26,
+      "from_node_id": 27,
+      "to_node_id": 30,
+      "from_change_id": "41d30db6-8a16-406f-9fbf-e828ffce5134",
+      "to_change_id": "23fd1b56-6506-40ae-b3a8-ec178ac29b54",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Medium priority fix",
+      "created_at": "2026-01-08T00:58:36.780698-05:00"
+    },
+    {
+      "id": 27,
+      "from_node_id": 25,
+      "to_node_id": 31,
+      "from_change_id": "587b1d54-4aa5-40cf-909d-bad61fd5bd63",
+      "to_change_id": "59e11a19-4af3-4816-889d-83f41d3b3625",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Documentation fix",
+      "created_at": "2026-01-08T00:58:36.799779-05:00"
+    },
+    {
+      "id": 28,
+      "from_node_id": 25,
+      "to_node_id": 32,
+      "from_change_id": "587b1d54-4aa5-40cf-909d-bad61fd5bd63",
+      "to_change_id": "dd52ad32-95c4-43af-887b-9478ae21df6a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Session progress",
+      "created_at": "2026-01-08T00:58:41.139787-05:00"
+    },
+    {
+      "id": 29,
+      "from_node_id": 25,
+      "to_node_id": 33,
+      "from_change_id": "587b1d54-4aa5-40cf-909d-bad61fd5bd63",
+      "to_change_id": "17a710af-890b-42fc-aa2c-bf521939ab05",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "New issue discovered",
+      "created_at": "2026-01-08T01:02:59.656313-05:00"
+    },
+    {
+      "id": 30,
+      "from_node_id": 33,
+      "to_node_id": 34,
+      "from_change_id": "17a710af-890b-42fc-aa2c-bf521939ab05",
+      "to_change_id": "cc9b59cc-24fc-46b1-b374-862cb096490a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fix missing tools",
+      "created_at": "2026-01-08T01:03:31.299301-05:00"
+    },
+    {
+      "id": 31,
+      "from_node_id": 34,
+      "to_node_id": 35,
+      "from_change_id": "cc9b59cc-24fc-46b1-b374-862cb096490a",
+      "to_change_id": "0fba838b-01b0-4442-84c8-93f2f3706e32",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementation",
+      "created_at": "2026-01-08T02:05:25.365897-05:00"
+    },
+    {
+      "id": 32,
+      "from_node_id": 35,
+      "to_node_id": 36,
+      "from_change_id": "0fba838b-01b0-4442-84c8-93f2f3706e32",
+      "to_change_id": "69ac35ac-64f2-4f4e-a2f3-7108f7f2846c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Verified",
+      "created_at": "2026-01-08T02:05:49.624936-05:00"
+    },
+    {
+      "id": 33,
+      "from_node_id": 36,
+      "to_node_id": 37,
+      "from_change_id": "69ac35ac-64f2-4f4e-a2f3-7108f7f2846c",
+      "to_change_id": "08e3c74e-071d-4334-8331-ee98fa66a569",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Test coverage",
+      "created_at": "2026-01-08T02:06:42.743358-05:00"
+    },
+    {
+      "id": 34,
+      "from_node_id": 37,
+      "to_node_id": 38,
+      "from_change_id": "08e3c74e-071d-4334-8331-ee98fa66a569",
+      "to_change_id": "a61b0f24-16a5-406c-9d17-620267d0094e",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Security findings",
+      "created_at": "2026-01-08T02:08:15.346211-05:00"
+    },
+    {
+      "id": 35,
+      "from_node_id": 38,
+      "to_node_id": 39,
+      "from_change_id": "a61b0f24-16a5-406c-9d17-620267d0094e",
+      "to_change_id": "75ffe9e7-f389-4943-a708-0ad7e3be881b",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Security fix applied",
+      "created_at": "2026-01-08T02:08:55.226679-05:00"
     }
   ]
 }
