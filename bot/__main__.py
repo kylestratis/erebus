@@ -9,13 +9,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 
 from pydantic import ValidationError
 
 from bot.client import ErebusBot
-from bot.config import get_settings
 from bot.logging import setup_logging
+from config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -52,31 +53,32 @@ async def main(args: argparse.Namespace) -> int:
     Returns:
         Exit code (0 for success, 1 for error).
     """
+    # Apply CLI log level overrides before loading config
+    # This ensures the config picks up the correct value
+    if args.debug:
+        os.environ["LOG_LEVEL"] = "DEBUG"
+    elif args.log_level:
+        os.environ["LOG_LEVEL"] = args.log_level
+
     try:
         # Load configuration
-        settings = get_settings()
+        config = get_config()
     except ValidationError as e:
         print(f"Configuration error: {e}", file=sys.stderr)
         return 1
 
-    # Override log level from CLI args
-    if args.debug:
-        settings.log_level = "DEBUG"
-    elif args.log_level:
-        settings.log_level = args.log_level
-
     # Set up logging (must be done before using logger)
-    setup_logging(settings)
-    logger.info(f"Loaded configuration for {settings.environment.value} environment")
+    setup_logging(config)
+    logger.info(f"Loaded configuration for {config.environment.value} environment")
     if args.debug:
         logger.debug("Debug mode enabled via --debug flag")
     logger.info("Erebus awakening...")
 
     # Create and run bot
-    bot = ErebusBot(settings)
+    bot = ErebusBot(config)
 
     try:
-        await bot.start(settings.discord_bot_token)
+        await bot.start(config.discord_bot_token)
     except KeyboardInterrupt:
         logger.info("Received interrupt, shutting down...")
     except Exception as e:

@@ -1,0 +1,38 @@
+# Erebus MCP Server Configuration
+# ================================
+#
+# This file configures MCP (Model Context Protocol) servers.
+# MCP servers provide tool integrations (Todoist, GitHub, etc.)
+#
+# NOTE: All other configuration is done via environment variables in .env.
+# This file is ONLY for MCP servers which require array syntax.
+#
+# IMPORTANT: Todoist is auto-configured if TODOIST_API_TOKEN is set in .env.
+# You only need entries here for custom MCP servers or to override defaults.
+
+# ---------------------------------------------------------------------------
+# MCP Servers
+# ---------------------------------------------------------------------------
+#
+# Each server needs:
+#   name    - Unique identifier (used for tool prefixing)
+#   command - Executable to run (e.g., "npx", "node", "python")
+#   args    - Command arguments (array)
+#   env     - Environment variables (optional, for API keys etc.)
+#
+# Example: Custom Todoist configuration (overrides auto-config)
+# [[mcp.servers]]
+# name = "todoist"
+# command = "npx"
+# args = ["@doist/todoist-ai"]
+# [mcp.servers.env]
+# TODOIST_API_KEY = "your-api-key"
+# DOTENV_CONFIG_QUIET = "true"
+#
+# Example: GitHub MCP server
+# [[mcp.servers]]
+# name = "github"
+# command = "npx"
+# args = ["@modelcontextprotocol/server-github"]
+# [mcp.servers.env]
+# GITHUB_TOKEN = "your-github-token"

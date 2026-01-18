@@ -48,6 +48,10 @@ secrets/
 *.key
 config/secrets.json
 
+# Local configuration (may contain customizations)
+config.toml
+!config.example.toml
+
 # Testing
 .pytest_cache/
 .coverage

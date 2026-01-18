@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -23,23 +22,19 @@ from agents import (
 from agents.eidolon import (
     EidolonConfig,
     EidolonMemory,
-    MCPServerConfig,
     SystemToolExecutor,
     ToolRegistry,
     get_system_tool_definitions,
 )
 from agents.vault import (
     Vault,
-    VaultConfig,
     VaultError,
     VaultToolExecutor,
     get_vault_tool_definitions,
 )
 from bot.scheduler import Scheduler
 from bot.scheduler.jobs import DailyNoteJob, EndOfDaySyncJob, WeeklyReviewJob
-
-if TYPE_CHECKING:
-    from bot.config import Settings
+from config import ErebusConfig, MCPServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +60,7 @@ class ErebusBot(commands.Bot):
         scheduler: Job scheduler for automated tasks.
     """
 
-    def __init__(self, config: Settings) -> None:
+    def __init__(self, config: ErebusConfig) -> None:
         """Initialize the Erebus bot.
 
         Args:
@@ -196,16 +191,16 @@ class ErebusBot(commands.Bot):
         self._tool_registry = ToolRegistry()
 
         # Register vault tools if configured
-        if self.config.obsidian_vault_path:
+        vault_config = self.config.vault
+        if vault_config.root:
             try:
-                vault_config = VaultConfig.from_settings(self.config)
                 self.vault = Vault(vault_config)
 
                 tool_definitions = get_vault_tool_definitions()
                 executor = VaultToolExecutor(self.vault)
                 self._tool_registry.register(tool_definitions, executor)
 
-                logger.info(f"Initialized vault at {self.config.obsidian_vault_path}")
+                logger.info(f"Initialized vault at {vault_config.root}")
 
             except VaultError as e:
                 logger.error(f"Vault configuration error: {e}. Check OBSIDIAN_VAULT_PATH.")

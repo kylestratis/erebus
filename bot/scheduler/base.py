@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from agents import MCPClientManager
     from agents.eidolon import EidolonMemory
     from agents.vault import Vault
-    from bot.config import Settings
+    from config import ErebusConfig
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class JobContext:
         discord_user: Discord user to send messages to (may be None).
     """
 
-    config: Settings
+    config: ErebusConfig
     eidolon: EidolonMemory | None = None
     vault: Vault | None = None
     mcp: MCPClientManager | None = None

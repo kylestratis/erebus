@@ -8,32 +8,16 @@ from __future__ import annotations
 
 import logging
 from contextlib import AsyncExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from agents.models.base import ToolDefinition
+from config import MCPServerConfig
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class MCPServerConfig:
-    """Configuration for an MCP server connection.
-
-    Attributes:
-        name: Unique identifier for this server.
-        command: Command to run the server (e.g., "npx", "node", "python").
-        args: Arguments to pass to the command.
-        env: Environment variables to pass to the server.
-    """
-
-    name: str
-    command: str
-    args: list[str] = field(default_factory=list)
-    env: dict[str, str] | None = None
 
 
 @dataclass

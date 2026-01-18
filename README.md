@@ -43,11 +43,12 @@ PostgreSQL (state persistence)
 
 ```
 erebus/
+├── config/           # Unified configuration system
+│   └── __init__.py   # ErebusConfig, MCPServerConfig, etc.
 ├── bot/              # Discord bot
 │   ├── cogs/         # Command modules (slash commands)
 │   ├── scheduler/    # Automated jobs (daily note, sync, weekly review)
-│   ├── client.py     # Discord client with auth
-│   └── config.py     # pydantic-settings configuration
+│   └── client.py     # Discord client with auth
 ├── agents/           # AI agent integrations
 │   ├── eidolon/      # EidolonMemory (Letta wrapper)
 │   ├── mcp/          # MCP client for tool servers
@@ -56,6 +57,8 @@ erebus/
 ├── docker/           # Docker configurations
 │   └── letta/        # Letta server + PostgreSQL
 ├── docs/             # Documentation
+├── .env              # All configuration (copy from .env.example)
+├── config.toml       # MCP servers only (optional, copy from config.example.toml)
 └── tests/            # Test suite
 ```
 
@@ -80,9 +83,9 @@ cd erebus
 mise install
 uv sync
 
-# Copy environment template
+# Copy environment template and add your credentials
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with your Discord token, user ID, and API keys
 ```
 
 ### Start Letta Server
@@ -225,6 +228,15 @@ journalctl -u erebus -f  # if running as systemd service
 
 Erebus uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration management with automatic validation.
 
+### Configuration Files
+
+| File | Purpose | Git-tracked |
+|------|---------|-------------|
+| `.env.example` | Template for all settings | Yes |
+| `.env` | Your configuration | No |
+| `config.example.toml` | MCP server configuration template | Yes |
+| `config.toml` | Your MCP server configuration | No |
+
 ### Command Line Options
 
 | Option | Description |
@@ -234,17 +246,14 @@ Erebus uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydant
 
 ### Environment Variables
 
+All configuration is done via environment variables in `.env`:
+
 #### Required
 
 | Variable | Description |
 |----------|-------------|
 | `DISCORD_BOT_TOKEN` | Discord bot token from the Developer Portal |
 | `DISCORD_USER_ID` | Your Discord user ID (numeric) |
-
-#### Required for AI Features
-
-| Variable | Description |
-|----------|-------------|
 | `ANTHROPIC_API_KEY` | Anthropic API key (used by Letta for Claude) |
 | `OPENAI_API_KEY` | OpenAI API key (used by Letta for embeddings) |
 
@@ -264,10 +273,32 @@ Erebus uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydant
 | `OBSIDIAN_TEMPLATES_PATH` | `Templates` | Relative path to templates directory |
 | `OBSIDIAN_DAILY_NOTES_PATH` | `Calendar/Daily Notes` | Relative path to daily notes |
 | `OBSIDIAN_DAILY_NOTE_FORMAT` | `%Y-%m-%d` | strftime format for daily note filenames |
+| `LETTA_API_URL` | `http://localhost:8283` | Letta server API URL |
+| `LETTA_API_KEY` | - | Letta API key (if using remote server) |
 | `ENVIRONMENT` | `development` | `development`, `staging`, or `production` |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `SCHEDULER_ENABLED` | `true` | Enable/disable all scheduled jobs |
+| `SCHEDULER_TIMEZONE` | `America/New_York` | IANA timezone for job schedules |
 
 See `.env.example` for a complete template with all available options.
+
+### MCP Server Configuration (config.toml)
+
+MCP servers are configured in `config.toml` (for array syntax support):
+
+```toml
+# Todoist is auto-configured from TODOIST_API_TOKEN in .env
+# Only add entries here for custom MCP servers
+
+[[mcp.servers]]
+name = "github"
+command = "npx"
+args = ["@modelcontextprotocol/server-github"]
+[mcp.servers.env]
+GITHUB_TOKEN = "your-github-token"
+```
+
+See `config.example.toml` for more examples.
 
 ## Features
 

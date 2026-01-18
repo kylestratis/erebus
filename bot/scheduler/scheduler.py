@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from agents import MCPClientManager
     from agents.eidolon import EidolonMemory
     from agents.vault import Vault
-    from bot.config import Settings
+    from config import ErebusConfig
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class Scheduler:
 
     def __init__(
         self,
-        config: Settings,
+        config: ErebusConfig,
         timezone: str = "America/Chicago",
         max_history: int = 100,
     ) -> None:

@@ -11,10 +11,8 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from bot.config import Settings
+from config import VaultConfig
 
 logger = logging.getLogger(__name__)
 
@@ -93,46 +91,6 @@ def _obsidian_to_strftime(obsidian_format: str) -> str:
         return token_map[match.group(0)]
 
     return pattern.sub(replace_token, obsidian_format)
-
-
-@dataclass
-class VaultConfig:
-    """Configuration for a vault.
-
-    Attributes:
-        root: Absolute path to the vault root.
-        templates_path: Relative path to templates directory.
-        daily_notes_path: Relative path to daily notes directory.
-        daily_note_format: Date format for daily note filenames.
-    """
-
-    root: Path
-    templates_path: str = "Templates"
-    daily_notes_path: str = "Calendar/Daily Notes"
-    daily_note_format: str = "%Y-%m-%d"
-
-    @classmethod
-    def from_settings(cls, settings: Settings) -> VaultConfig:
-        """Create config from application settings.
-
-        Args:
-            settings: Application settings instance.
-
-        Returns:
-            Configured VaultConfig instance.
-
-        Raises:
-            VaultError: If obsidian_vault_path is not configured.
-        """
-        if settings.obsidian_vault_path is None:
-            raise VaultError("Obsidian vault path not configured in settings")
-
-        return cls(
-            root=settings.obsidian_vault_path.resolve(),
-            templates_path=settings.obsidian_templates_path,
-            daily_notes_path=settings.obsidian_daily_notes_path,
-            daily_note_format=settings.obsidian_daily_note_format,
-        )
 
 
 @dataclass

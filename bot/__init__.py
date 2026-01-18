@@ -4,6 +4,9 @@ A stateful, continuously-learning AI assistant accessible via Discord.
 """
 
 from bot.client import ErebusBot
-from bot.config import Settings
+from config import ErebusConfig
 
-__all__ = ["ErebusBot", "Settings"]
+# Backward compatibility alias
+Settings = ErebusConfig
+
+__all__ = ["ErebusBot", "ErebusConfig", "Settings"]

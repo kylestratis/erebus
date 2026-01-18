@@ -22,6 +22,7 @@ from agents.eidolon.memory import (
     create_human_block,
 )
 from agents.eidolon.tools import ToolRegistry
+from config import MCPServerConfig
 
 if TYPE_CHECKING:
     from letta_client.types import AgentState
@@ -31,23 +32,6 @@ logger = logging.getLogger(__name__)
 # Default model configuration
 DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514"
 DEFAULT_EMBEDDING = "openai/text-embedding-3-small"
-
-
-@dataclass
-class MCPServerConfig:
-    """Configuration for an MCP server to register with Letta.
-
-    Attributes:
-        name: Unique identifier for this server.
-        command: Command to run the server (e.g., "npx", "node", "python").
-        args: Arguments to pass to the command.
-        env: Environment variables to pass to the server.
-    """
-
-    name: str
-    command: str
-    args: list[str] = field(default_factory=list)
-    env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
