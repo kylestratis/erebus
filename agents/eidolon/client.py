@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,7 @@ from agents.eidolon.memory import (
     create_human_block,
 )
 from agents.eidolon.tools import ToolRegistry
+from bot.diagnostics import RequestMetrics, ToolCallMetrics
 from config import MCPServerConfig
 
 if TYPE_CHECKING:
@@ -178,6 +180,7 @@ class EidolonMemory:
         message: str,
         user_name: str = "User",
         timezone: str | None = None,
+        metrics: RequestMetrics | None = None,
     ) -> str:
         """Send a message to the user's agent and get a response.
 
@@ -190,6 +193,7 @@ class EidolonMemory:
             message: User's message.
             user_name: User's display name (for new agents).
             timezone: User's timezone (for new agents).
+            metrics: Optional RequestMetrics for tracking diagnostics.
 
         Returns:
             Agent's response text.
@@ -203,11 +207,15 @@ class EidolonMemory:
 
         # Send message to agent
         logger.debug(f"Sending message to agent {agent_id}: {message[:100]}...")
+        letta_start = time.perf_counter()
         response = await self.client.agents.messages.create(
             agent_id=agent_id,
             messages=[{"role": "user", "content": message}],
         )
-        logger.debug(f"Received response from Letta: {type(response).__name__}")
+        letta_elapsed = (time.perf_counter() - letta_start) * 1000
+        logger.debug(
+            f"Received response from Letta: {type(response).__name__} ({letta_elapsed:.0f}ms)"
+        )
 
         # Handle tool execution loop
         iterations = 0
@@ -232,21 +240,35 @@ class EidolonMemory:
             # Execute tool locally with timeout
             logger.info(f"Executing native tool: {tool_name}")
             logger.debug(f"Tool arguments: {tool_args}")
+
+            # Track tool execution timing
+            tool_metrics = ToolCallMetrics(tool_name=tool_name)
+            if metrics:
+                metrics.tool_calls.append(tool_metrics)
+
             status = "success"
             try:
-                import asyncio
-
                 result = await asyncio.wait_for(
                     self.tool_registry.execute(tool_name, tool_args),
                     timeout=self.TOOL_EXECUTION_TIMEOUT,
                 )
-                logger.debug(f"Tool result ({len(result)} chars): {result[:200]}...")
+                tool_metrics.finish(success=True)
+                logger.debug(
+                    f"Tool result ({len(result)} chars, {tool_metrics.elapsed_ms:.0f}ms): "
+                    f"{result[:200]}..."
+                )
             except TimeoutError:
-                logger.error(f"Tool execution timed out: {tool_name}")
+                tool_metrics.finish(success=False, error="timeout")
+                logger.error(
+                    f"Tool execution timed out: {tool_name} ({tool_metrics.elapsed_ms:.0f}ms)"
+                )
                 result = f"Tool execution timed out after {self.TOOL_EXECUTION_TIMEOUT}s"
                 status = "error"
             except Exception as e:
-                logger.exception(f"Tool execution failed: {tool_name}")
+                tool_metrics.finish(success=False, error=str(e))
+                logger.exception(
+                    f"Tool execution failed: {tool_name} ({tool_metrics.elapsed_ms:.0f}ms)"
+                )
                 result = f"Error executing tool: {e}"
                 status = "error"
 
@@ -276,6 +298,10 @@ class EidolonMemory:
 
         if iterations >= self.MAX_TOOL_ITERATIONS:
             logger.warning(f"Tool execution loop hit max iterations for user {user_id}")
+
+        # Record iteration count in metrics
+        if metrics:
+            metrics.add_metadata("tool_iterations", iterations)
 
         # Extract text response
         final_text = self._extract_response_text(response)

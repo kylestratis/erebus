@@ -32,6 +32,7 @@ from agents.vault import (
     VaultToolExecutor,
     get_vault_tool_definitions,
 )
+from bot.diagnostics import track_request
 from bot.scheduler import Scheduler
 from bot.scheduler.jobs import DailyNoteJob, EndOfDaySyncJob, WeeklyReviewJob
 from config import ErebusConfig, MCPServerConfig
@@ -445,51 +446,64 @@ class ErebusBot(commands.Bot):
 
         # Show typing indicator while processing
         async with message.channel.typing():
-            try:
-                response = await asyncio.wait_for(
-                    self.eidolon.chat(
-                        user_id=message.author.id,
-                        message=message.content,
-                        user_name=message.author.display_name,
-                        timezone=self.config.scheduler_timezone,
-                    ),
-                    timeout=MODEL_REQUEST_TIMEOUT,
-                )
+            # Track request timing and tool calls
+            with track_request("chat") as metrics:
+                metrics.add_metadata("user_id", message.author.id)
+                metrics.add_metadata("msg_len", len(message.content))
 
-                # Send the response
-                if response:
-                    await self._send_long_message(message.channel, response)
-                else:
-                    # Model returned no content (shouldn't happen in normal chat)
-                    logger.warning(f"Model returned empty response for user {message.author.id}")
-                    await message.channel.send(
-                        "*Erebus ponders in silence...*\n\nI'm not sure how to respond to that."
+                try:
+                    response = await asyncio.wait_for(
+                        self.eidolon.chat(
+                            user_id=message.author.id,
+                            message=message.content,
+                            user_name=message.author.display_name,
+                            timezone=self.config.scheduler_timezone,
+                            metrics=metrics,
+                        ),
+                        timeout=MODEL_REQUEST_TIMEOUT,
                     )
 
-            except TimeoutError:
-                logger.error(f"Model request timed out for user {message.author.id}")
-                await message.channel.send(
-                    "The request took too long to process. Please try again."
-                )
+                    # Send the response
+                    if response:
+                        metrics.add_metadata("resp_len", len(response))
+                        await self._send_long_message(message.channel, response)
+                    else:
+                        # Model returned no content (shouldn't happen in normal chat)
+                        logger.warning(
+                            f"Model returned empty response for user {message.author.id}"
+                        )
+                        await message.channel.send(
+                            "*Erebus ponders in silence...*\n\n"
+                            "I'm not sure how to respond to that."
+                        )
 
-            except RateLimitError as e:
-                logger.warning(f"Rate limited: {e}")
-                retry_msg = f" Try again in {e.retry_after:.0f} seconds." if e.retry_after else ""
-                await message.channel.send(
-                    f"I'm being rate limited by my AI provider.{retry_msg} Please wait a moment."
-                )
+                except TimeoutError:
+                    logger.error(f"Model request timed out for user {message.author.id}")
+                    await message.channel.send(
+                        "The request took too long to process. Please try again."
+                    )
 
-            except ModelError as e:
-                logger.exception(f"Model error for user {message.author.id}: {e}")
-                await message.channel.send(
-                    "I encountered an error while thinking. Please try again."
-                )
+                except RateLimitError as e:
+                    logger.warning(f"Rate limited: {e}")
+                    retry_msg = (
+                        f" Try again in {e.retry_after:.0f} seconds." if e.retry_after else ""
+                    )
+                    await message.channel.send(
+                        f"I'm being rate limited by my AI provider.{retry_msg} "
+                        "Please wait a moment."
+                    )
 
-            except Exception as e:
-                logger.exception(f"Unexpected error handling message: {e}")
-                await message.channel.send(
-                    "Something unexpected went wrong. Please try again later."
-                )
+                except ModelError as e:
+                    logger.exception(f"Model error for user {message.author.id}: {e}")
+                    await message.channel.send(
+                        "I encountered an error while thinking. Please try again."
+                    )
+
+                except Exception as e:
+                    logger.exception(f"Unexpected error handling message: {e}")
+                    await message.channel.send(
+                        "Something unexpected went wrong. Please try again later."
+                    )
 
     async def _send_long_message(
         self,
