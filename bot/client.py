@@ -34,7 +34,12 @@ from agents.vault import (
 )
 from bot.diagnostics import track_request
 from bot.scheduler import Scheduler
-from bot.scheduler.jobs import DailyNoteJob, EndOfDaySyncJob, WeeklyReviewJob
+from bot.scheduler.jobs import (
+    DailyNoteJob,
+    EndOfDaySyncJob,
+    ErebusJournalJob,
+    WeeklyReviewJob,
+)
 from config import ErebusConfig, MCPServerConfig
 
 logger = logging.getLogger(__name__)
@@ -304,6 +309,12 @@ class ErebusBot(commands.Bot):
         weekly_review_job.cron = self.config.job_weekly_review_cron
         weekly_review_job.enabled = self.config.job_weekly_review_enabled
         self.scheduler.register(weekly_review_job)
+
+        # Register Erebus journal job
+        erebus_journal_job = ErebusJournalJob()
+        erebus_journal_job.cron = self.config.job_erebus_journal_cron
+        erebus_journal_job.enabled = self.config.job_erebus_journal_enabled
+        self.scheduler.register(erebus_journal_job)
 
         logger.info(f"Scheduler initialized with {len(self.scheduler.jobs)} jobs")
 

@@ -82,6 +82,39 @@ END_OF_DAY_SUMMARY_PROMPT = """Generate a brief end-of-day summary.
 Keep it brief. If no daily note, just say "No activity tracked today."
 """
 
+# Prompt for writing review questions to daily note
+DAILY_REVIEW_PROMPT = """Add reflection prompts to today's daily note.
+
+1. **Read today's daily note** using vault_get_daily_note
+2. **Analyze the day's activity:**
+   - Count completed tasks vs incomplete
+   - Note any patterns (what projects had most activity, blockers)
+   - Identify if there were unexpected tasks or interruptions
+
+3. **Generate 2-3 personalized reflection questions** based on:
+   - If many tasks completed: "What made today productive?"
+   - If tasks rolled over: "What blocked [specific task]? What would help tomorrow?"
+   - If one project dominated: "How does [project] align with larger goals?"
+   - If mixed progress: "What's the ONE thing that would unlock the most tomorrow?"
+
+4. **Add to the daily note:**
+   - Read the current content with vault_read_note
+   - Look for a `## Reflection` section (create if not exists)
+   - Add the questions under `## Reflection` as a bulleted list
+   - Use vault_write_note with overwrite=true to save
+
+5. **Format example:**
+```markdown
+## Reflection
+
+- What made today productive? (You completed 8 tasks!)
+- What blocked the API migration? What would help tomorrow?
+- How does the Erebus project align with your Q1 goals?
+```
+
+Keep questions specific and actionable. Base them on actual tasks and projects from the note.
+"""
+
 
 class EndOfDaySyncJob(ScheduledJob):
     """Performs end-of-day sync and sends summary.
@@ -133,6 +166,26 @@ class EndOfDaySyncJob(ScheduledJob):
             logger.exception("Failed to complete end-of-day sync")
             return JobResult.failed(f"Sync failed: {e}", error=e)
 
+        # Add review prompts to daily note
+        review_added = False
+        try:
+            logger.info("Adding reflection prompts to daily note...")
+            review_response = await asyncio.wait_for(
+                self.chat(DAILY_REVIEW_PROMPT),
+                timeout=AI_TIMEOUT,
+            )
+
+            if review_response:
+                review_added = True
+                logger.info("Reflection prompts added to daily note")
+            else:
+                logger.warning("AI returned no response for review prompts")
+
+        except TimeoutError:
+            logger.warning("Review prompt generation timed out")
+        except Exception:
+            logger.exception("Failed to add review prompts")
+
         # Send summary DM if we can
         summary_sent = False
         if self.context.can_send_dm:
@@ -157,7 +210,15 @@ class EndOfDaySyncJob(ScheduledJob):
         else:
             logger.info("Skipping summary DM: no Discord user configured")
 
+        # Build result message
+        result_parts = ["End-of-day sync complete"]
+        if review_added:
+            result_parts.append("reflection prompts added")
+        if summary_sent:
+            result_parts.append("summary sent")
+
         return JobResult.success(
-            "End-of-day sync complete" + (" and summary sent" if summary_sent else ""),
+            ", ".join(result_parts),
             summary_sent=summary_sent,
+            review_added=review_added,
         )
