@@ -6,8 +6,9 @@ with persistent memory.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from letta_client import AsyncLetta
@@ -33,6 +34,23 @@ DEFAULT_EMBEDDING = "openai/text-embedding-3-small"
 
 
 @dataclass
+class MCPServerConfig:
+    """Configuration for an MCP server to register with Letta.
+
+    Attributes:
+        name: Unique identifier for this server.
+        command: Command to run the server (e.g., "npx", "node", "python").
+        args: Arguments to pass to the command.
+        env: Environment variables to pass to the server.
+    """
+
+    name: str
+    command: str
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class EidolonConfig:
     """Configuration for EidolonMemory.
 
@@ -42,6 +60,7 @@ class EidolonConfig:
         model: Model identifier for the agent.
         embedding: Embedding model for archival memory search.
         default_timezone: Default timezone for new users.
+        mcp_servers: MCP servers to register with Letta (native MCP support).
     """
 
     base_url: str = "http://localhost:8283"
@@ -49,6 +68,7 @@ class EidolonConfig:
     model: str = DEFAULT_MODEL
     embedding: str = DEFAULT_EMBEDDING
     default_timezone: str = "America/New_York"
+    mcp_servers: list[MCPServerConfig] = field(default_factory=list)
 
 
 class EidolonMemory:
@@ -63,6 +83,9 @@ class EidolonMemory:
     Native tools (like vault operations) are executed locally in the bot
     process rather than in Letta's environment. This allows tools to access
     local resources like the filesystem.
+
+    MCP tools (like Todoist) can be registered with Letta's native MCP support,
+    allowing Letta to execute them directly in its Docker environment.
 
     Attributes:
         config: EidolonMemory configuration.
@@ -104,6 +127,15 @@ class EidolonMemory:
         self._tool_ids: list[str] = []
         self._tools_registered: bool = False
 
+        # MCP server registration state
+        self._mcp_server_ids: dict[str, str] = {}  # name -> server_id
+        self._mcp_tool_ids: set[str] = set()  # Tool IDs from MCP servers (set for dedup)
+        self._mcp_registered: bool = False
+
+        # Async locks to prevent race conditions during lazy initialization
+        self._mcp_registration_lock = asyncio.Lock()
+        self._tools_registration_lock = asyncio.Lock()
+
         logger.info(f"EidolonMemory initialized with Letta at {self.config.base_url}")
 
     async def get_or_create_agent(
@@ -122,6 +154,9 @@ class EidolonMemory:
         Returns:
             Agent ID for the user.
         """
+        # Ensure MCP servers are registered with Letta
+        await self._ensure_mcp_servers_registered()
+
         # Ensure tools are registered with Letta (needed for both new and existing agents)
         await self._ensure_tools_registered()
 
@@ -374,9 +409,25 @@ class EidolonMemory:
             "memory_blocks": memory_blocks,
         }
 
-        if self._tool_ids:
-            create_kwargs["tool_ids"] = self._tool_ids
-            logger.info(f"Creating agent with {len(self._tool_ids)} tools")
+        # Combine native tool IDs and MCP tool IDs (convert set to list)
+        all_tool_ids = self._tool_ids + list(self._mcp_tool_ids)
+        if all_tool_ids:
+            create_kwargs["tool_ids"] = all_tool_ids
+            logger.info(
+                f"Creating agent with {len(all_tool_ids)} tools "
+                f"({len(self._tool_ids)} native, {len(self._mcp_tool_ids)} MCP)"
+            )
+        else:
+            # Warn if tools were configured but none registered
+            if self.config.mcp_servers or self.tool_registry.tools:
+                logger.warning(
+                    "Agent created with NO tools despite configuration. "
+                    f"MCP servers configured: {len(self.config.mcp_servers)}, "
+                    f"Native tools registered: {len(self.tool_registry.tools)}. "
+                    "Check logs for registration failures."
+                )
+            else:
+                logger.info("Agent created without tools (none configured)")
 
         agent = await self.client.agents.create(**create_kwargs)
 
@@ -402,7 +453,10 @@ class EidolonMemory:
         Args:
             agent_id: The agent ID to update.
         """
-        if not self._tool_ids:
+        # Combine native and MCP tool IDs (convert set to list)
+        all_tool_ids = self._tool_ids + list(self._mcp_tool_ids)
+
+        if not all_tool_ids:
             logger.debug("No tools to sync")
             return
 
@@ -410,7 +464,7 @@ class EidolonMemory:
             # Get agent's current tools
             agent = await self.client.agents.retrieve(agent_id=agent_id)
             current_tool_ids = set(agent.tool_ids or [])
-            new_tool_ids = set(self._tool_ids)
+            new_tool_ids = set(all_tool_ids)
 
             # Find tools that need to be added
             missing_tools = new_tool_ids - current_tool_ids
@@ -451,60 +505,184 @@ class EidolonMemory:
         except Exception as e:
             logger.warning(f"Failed to sync tools for agent {agent_id}: {e}")
 
+    async def _ensure_mcp_servers_registered(self) -> None:
+        """Register MCP servers with Letta (lazy initialization).
+
+        MCP servers are registered once on first use. Letta handles the MCP
+        connection and tool execution in its Docker environment.
+
+        Note: stdio transport only works when Letta runs in Docker.
+        """
+        async with self._mcp_registration_lock:
+            if self._mcp_registered:
+                return
+
+            if not self.config.mcp_servers:
+                self._mcp_registered = True
+                return
+
+            logger.info(
+                f"Registering {len(self.config.mcp_servers)} MCP servers with Letta..."
+            )
+
+            # Clear any stale IDs from previous registration attempts
+            self._mcp_tool_ids.clear()
+            failed_servers: list[str] = []
+
+            for mcp_config in self.config.mcp_servers:
+                try:
+                    # Check if server already exists (upsert pattern)
+                    existing = await self._find_mcp_server_by_name(mcp_config.name)
+                    if existing:
+                        self._mcp_server_ids[mcp_config.name] = existing
+                        logger.info(
+                            f"MCP server '{mcp_config.name}' already exists ({existing}). "
+                            f"Reusing existing configuration."
+                        )
+                    else:
+                        # Register new MCP server
+                        # SECURITY: env dict contains API keys. Letta SDK should not log it.
+                        server = await self.client.mcp_servers.create(
+                            server_name=mcp_config.name,
+                            config={
+                                "mcp_server_type": "stdio",
+                                "command": mcp_config.command,
+                                "args": mcp_config.args,
+                                "env": mcp_config.env,
+                            },
+                        )
+                        self._mcp_server_ids[mcp_config.name] = server.id
+                        logger.info(
+                            f"Registered MCP server: {mcp_config.name} ({server.id})"
+                        )
+
+                    # List tools from this server
+                    server_id = self._mcp_server_ids[mcp_config.name]
+                    tools = await self.client.mcp_servers.tools.list(server_id)
+
+                    # Defensive validation
+                    if not tools:
+                        logger.warning(
+                            f"MCP server '{mcp_config.name}' returned no tools. "
+                            f"Check Letta logs for server startup errors."
+                        )
+                        continue
+
+                    # Collect tool IDs for agent creation (set prevents duplicates)
+                    tool_count = 0
+                    for tool in tools:
+                        if not hasattr(tool, "id") or not tool.id:
+                            logger.warning(
+                                f"MCP tool missing ID in {mcp_config.name}: {tool}"
+                            )
+                            continue
+                        self._mcp_tool_ids.add(tool.id)
+                        tool_count += 1
+                        logger.debug(
+                            f"Found MCP tool: {getattr(tool, 'name', 'unknown')} "
+                            f"({tool.id})"
+                        )
+
+                    logger.info(
+                        f"MCP server {mcp_config.name} provides {tool_count} tools"
+                    )
+
+                except Exception as e:
+                    failed_servers.append(mcp_config.name)
+                    logger.exception(
+                        f"Failed to register MCP server {mcp_config.name}: {e}. "
+                        f"Check: (1) Letta server is running, "
+                        f"(2) '{mcp_config.command}' is available in Letta container, "
+                        f"(3) API credentials are valid, (4) Letta logs for errors."
+                    )
+
+            self._mcp_registered = True
+
+            # Surface failures clearly
+            if failed_servers:
+                logger.error(
+                    f"MCP registration completed with failures: "
+                    f"{', '.join(failed_servers)}. "
+                    f"Agents will be created without these MCP tools."
+                )
+
+            logger.info(
+                f"MCP registration complete: {len(self._mcp_server_ids)} servers, "
+                f"{len(self._mcp_tool_ids)} tools"
+            )
+
+    async def _find_mcp_server_by_name(self, name: str) -> str | None:
+        """Find an MCP server by name.
+
+        Args:
+            name: Server name to search for.
+
+        Returns:
+            Server ID if found, None otherwise.
+        """
+        try:
+            servers = await self.client.mcp_servers.list()
+            for server in servers:
+                if server.server_name == name:
+                    return server.id
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to list MCP servers: {e}")
+            return None
+
     async def _ensure_tools_registered(self) -> None:
         """Register native tools with Letta server (lazy initialization).
 
         Tools are registered once on first use. Each tool is created with
         a stub implementation since actual execution happens locally.
         """
-        if self._tools_registered:
-            return
+        async with self._tools_registration_lock:
+            if self._tools_registered:
+                return
 
-        if not self.tool_registry.tools:
-            self._tools_registered = True
-            return
+            if not self.tool_registry.tools:
+                self._tools_registered = True
+                return
 
-        logger.info(f"Registering {len(self.tool_registry.tools)} tools with Letta...")
+            logger.info(
+                f"Registering {len(self.tool_registry.tools)} tools with Letta..."
+            )
 
-        for tool_def in self.tool_registry.tools:
-            try:
-                import json
+            for tool_def in self.tool_registry.tools:
+                try:
+                    import json
 
-                # Sanitize name to be a valid Python identifier (used as function name)
-                safe_name = self._sanitize_tool_name(tool_def.name)
+                    # Sanitize name to be a valid Python identifier
+                    safe_name = self._sanitize_tool_name(tool_def.name)
 
-                # Escape description for use in docstring - json.dumps handles all
-                # special characters and quotes safely
-                safe_desc = json.dumps(tool_def.description)[1:-1]  # Strip outer quotes
+                    # Escape description for use in docstring
+                    safe_desc = json.dumps(tool_def.description)[1:-1]
 
-                # Create a stub function - actual execution happens locally
-                # The function name becomes the tool name in Letta
-                stub_code = f'''def {safe_name}(**kwargs):
+                    # Create a stub function - actual execution happens locally
+                    stub_code = f'''def {safe_name}(**kwargs):
     """{safe_desc}"""
     raise RuntimeError("This tool executes client-side only")
 '''
-                # Using upsert to handle existing tools gracefully
-                # Note: tool name is derived from function name in source_code
-                # default_requires_approval=True makes Letta return an approval
-                # request instead of executing server-side, allowing us to
-                # execute locally and send back the result.
-                tool = await self.client.tools.upsert(
-                    source_code=stub_code,
-                    json_schema={
-                        "name": safe_name,
-                        "description": tool_def.description,
-                        "parameters": tool_def.input_schema,
-                    },
-                    default_requires_approval=True,
-                )
-                self._tool_ids.append(tool.id)
-                logger.debug(f"Registered tool: {safe_name} (id={tool.id})")
+                    # Using upsert to handle existing tools gracefully
+                    # default_requires_approval=True makes Letta return an approval
+                    # request instead of executing server-side
+                    tool = await self.client.tools.upsert(
+                        source_code=stub_code,
+                        json_schema={
+                            "name": safe_name,
+                            "description": tool_def.description,
+                            "parameters": tool_def.input_schema,
+                        },
+                        default_requires_approval=True,
+                    )
+                    self._tool_ids.append(tool.id)
+                    logger.debug(f"Registered tool: {safe_name} (id={tool.id})")
 
-            except Exception as e:
-                logger.exception(f"Failed to register tool {tool_def.name}: {e}")
+                except Exception as e:
+                    logger.exception(f"Failed to register tool {tool_def.name}: {e}")
 
-        self._tools_registered = True
-        logger.info(f"Registered {len(self._tool_ids)} tools with Letta")
+            self._tools_registered = True
+            logger.info(f"Registered {len(self._tool_ids)} tools with Letta")
 
     def _sanitize_tool_name(self, name: str) -> str:
         """Sanitize a tool name to be a valid Python identifier.

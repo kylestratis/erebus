@@ -16,7 +16,6 @@ from discord.ext import commands
 
 from agents import (
     MCPClientManager,
-    MCPToolExecutor,
     ModelError,
     RateLimitError,
     create_todoist_config,
@@ -24,6 +23,7 @@ from agents import (
 from agents.eidolon import (
     EidolonConfig,
     EidolonMemory,
+    MCPServerConfig,
     SystemToolExecutor,
     ToolRegistry,
     get_system_tool_definitions,
@@ -152,7 +152,17 @@ class ErebusBot(commands.Bot):
             logger.info("Synced commands globally")
 
     async def _setup_mcp(self) -> None:
-        """Initialize MCP client and connect to configured servers."""
+        """Initialize local MCP client for direct tool access (optional).
+
+        Note: As of the native MCP migration, Todoist tools are registered
+        directly with Letta and executed in its Docker environment. This
+        local MCP client is kept for:
+        - Scheduler jobs that need direct MCP access without going through Letta
+        - Fallback if Letta MCP fails
+        - Future MCP servers that need local execution
+
+        The Todoist MCP server configuration for Letta is done in _setup_eidolon().
+        """
         # Only initialize if we have integrations configured
         if not self.config.todoist_api_token:
             logger.info("No MCP integrations configured (TODOIST_API_TOKEN not set)")
@@ -162,11 +172,11 @@ class ErebusBot(commands.Bot):
             self.mcp = MCPClientManager()
             await self.mcp.start()
 
-            # Connect to Todoist MCP server
+            # Connect to Todoist MCP server (local client for direct access)
             if self.config.todoist_api_token:
                 todoist_config = create_todoist_config(self.config.todoist_api_token)
                 await self.mcp.connect(todoist_config)
-                logger.info("Connected to Todoist MCP server")
+                logger.info("Connected to Todoist MCP server (local client)")
 
         except Exception as e:
             logger.exception(f"Failed to initialize MCP: {e}")
@@ -176,9 +186,13 @@ class ErebusBot(commands.Bot):
     def _setup_vault(self) -> None:
         """Initialize Obsidian vault and create tool registry.
 
-        Creates a ToolRegistry with vault tools and MCP tools for EidolonMemory.
+        Creates a ToolRegistry with vault tools for EidolonMemory.
+
+        Note: MCP tools (Todoist) are no longer registered in the native tool
+        registry. They are registered with Letta's native MCP support and
+        executed in Letta's Docker environment. See _setup_eidolon().
         """
-        # Always create tool registry (even without vault, for MCP tools)
+        # Always create tool registry (even without vault, for system tools)
         self._tool_registry = ToolRegistry()
 
         # Register vault tools if configured
@@ -203,18 +217,11 @@ class ErebusBot(commands.Bot):
         else:
             logger.info("Vault not configured (OBSIDIAN_VAULT_PATH not set)")
 
-        # Register MCP tools if available
-        if self.mcp and self.mcp.is_initialized:
-            mcp_tools = self.mcp.get_all_tools()
-            if mcp_tools:
-                mcp_executor = MCPToolExecutor(self.mcp)
-                self._tool_registry.register(mcp_tools, mcp_executor)
-                logger.info(f"Registered {len(mcp_tools)} MCP tools")
-
     async def _setup_eidolon(self) -> None:
         """Initialize EidolonMemory with Letta.
 
-        Creates an EidolonMemory instance configured with the tool registry.
+        Creates an EidolonMemory instance configured with the tool registry
+        and native MCP servers (Todoist).
         """
         # Check if Letta is configured
         if not self.config.letta_api_url:
@@ -225,10 +232,25 @@ class ErebusBot(commands.Bot):
             return
 
         try:
+            # Configure MCP servers for Letta's native MCP support
+            mcp_servers: list[MCPServerConfig] = []
+
+            if self.config.todoist_api_token:
+                mcp_servers.append(
+                    MCPServerConfig(
+                        name="todoist",
+                        command="npx",
+                        args=["@doist/todoist-ai"],
+                        env={"TODOIST_API_KEY": self.config.todoist_api_token},
+                    )
+                )
+                logger.info("Configured Todoist for Letta native MCP")
+
             eidolon_config = EidolonConfig(
                 base_url=self.config.letta_api_url,
                 api_key=self.config.letta_api_key,
                 default_timezone=self.config.scheduler_timezone,
+                mcp_servers=mcp_servers,
             )
 
             self.eidolon = EidolonMemory(
@@ -239,6 +261,12 @@ class ErebusBot(commands.Bot):
             # Verify connection
             if await self.eidolon.health_check():
                 logger.info(f"EidolonMemory connected to Letta at {self.config.letta_api_url}")
+
+                # Pre-register MCP servers and tools to avoid latency on first message
+                logger.info("Pre-registering MCP servers and tools with Letta...")
+                await self.eidolon._ensure_mcp_servers_registered()
+                await self.eidolon._ensure_tools_registered()
+                logger.info("MCP and tool registration complete")
             else:
                 logger.warning(
                     f"Letta server at {self.config.letta_api_url} is not responding. "

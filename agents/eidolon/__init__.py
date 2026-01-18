@@ -23,7 +23,7 @@ Usage:
     )
 """
 
-from agents.eidolon.client import EidolonConfig, EidolonMemory
+from agents.eidolon.client import EidolonConfig, EidolonMemory, MCPServerConfig
 from agents.eidolon.memory import (
     CONTEXT_BLOCK,
     CONTEXT_LABEL,
@@ -49,6 +49,7 @@ __all__ = [
     # Main classes
     "EidolonMemory",
     "EidolonConfig",
+    "MCPServerConfig",
     # Memory blocks
     "PERSONA_BLOCK",
     "PERSONA_LABEL",
