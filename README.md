@@ -155,54 +155,59 @@ docker compose down -v
 
 ## DigitalOcean Deployment
 
-### Requirements
+### Recommended Droplet
 
-- DigitalOcean Droplet (2GB RAM minimum)
-- Domain (optional, for monitoring)
+**Plan**: Basic `s-2vcpu-4gb` at **$24/month**
+- 2 vCPU, 4GB RAM, 80GB SSD, 4TB transfer
+- Sufficient for Erebus + Letta + PostgreSQL
 
-### Initial Setup
+See [docs/deployment/digitalocean-setup.md](docs/deployment/digitalocean-setup.md) for the complete setup guide.
 
-```bash
-# SSH into your droplet
-ssh root@your-droplet-ip
-
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-
-# Install Docker Compose
-apt-get update && apt-get install -y docker-compose-plugin
-
-# Clone the repo
-git clone https://github.com/kylestratis/erebus.git
-cd erebus
-```
-
-### Configure Environment
+### Quick Start
 
 ```bash
+# On your droplet
+git clone https://github.com/kylestratis/erebus.git /opt/erebus
+cd /opt/erebus
 cp .env.example .env
 nano .env  # Add your credentials
+
+# Start all services
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-Required variables:
-- `DISCORD_BOT_TOKEN` - From Discord Developer Portal
-- `DISCORD_USER_ID` - Your Discord user ID
-- `ANTHROPIC_API_KEY` - For Claude (used by Letta)
-- `OPENAI_API_KEY` - For embeddings (used by Letta)
+### Automatic Deployment
 
-### Start Services
+Push to `main` triggers automatic deployment via GitHub Actions:
+1. Builds Docker image and pushes to GitHub Container Registry
+2. SSHs into droplet and restarts the erebus container
+3. Watchtower also polls for updates every 5 minutes
+
+Required GitHub Secrets:
+- `DROPLET_HOST` - Your droplet IP
+- `DROPLET_USER` - SSH user (e.g., `deploy`)
+- `DROPLET_SSH_KEY` - Private SSH key for deployment
+
+### Local Deployment Tasks
+
+Use mise for deployment operations:
 
 ```bash
-# Start Letta + PostgreSQL
-cd docker/letta
-docker compose up -d
+# Add to your .env
+DEPLOY_HOST=your-droplet-ip
+DEPLOY_USER=deploy
 
-# Return to project root
-cd ../..
+# Sync environment changes
+mise run deploy:env
 
-# Build and run the bot (TODO: add bot Dockerfile)
-uv sync
-uv run python -m bot
+# View logs
+mise run deploy:logs
+
+# SSH into server
+mise run deploy:ssh
+
+# Check status
+mise run deploy:status
 ```
 
 ### Vault Sync with Syncthing
@@ -212,17 +217,6 @@ To sync your Obsidian vault to the droplet:
 1. Install Syncthing on the droplet
 2. Configure folder sync from your local vault
 3. Set `OBSIDIAN_VAULT_PATH` to the synced location
-
-### Monitoring
-
-Check logs:
-```bash
-# Letta logs
-docker logs erebus-letta -f
-
-# Bot logs
-journalctl -u erebus -f  # if running as systemd service
-```
 
 ## Configuration Reference
 

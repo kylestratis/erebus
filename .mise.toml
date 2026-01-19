@@ -39,3 +39,78 @@ run = "cd mcp-servers/obsidian && uv run python -m server"
 [tasks.mcp-learning]
 description = "Run Learning MCP server"
 run = "cd mcp-servers/learning && uv run python -m server"
+
+# =============================================================================
+# Deployment Tasks
+# =============================================================================
+# These tasks require DEPLOY_HOST and DEPLOY_USER environment variables
+# Set them in .env or export them before running:
+#   export DEPLOY_HOST=your-droplet-ip
+#   export DEPLOY_USER=deploy
+
+[tasks.'deploy:env']
+description = "Sync .env file to production server"
+run = """
+set -euo pipefail
+[[ ! -f .env ]] && echo "❌ Error: .env file not found" && exit 1
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+echo "📤 Syncing .env to ${DEPLOY_USER}@${DEPLOY_HOST}..."
+scp .env "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/erebus/.env"
+echo "🔄 Restarting containers..."
+ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml up -d'
+echo "✅ Done"
+"""
+
+[tasks."deploy:ssh"]
+description = "SSH into production server"
+run = """
+set -euo pipefail
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+exec ssh "${DEPLOY_USER}@${DEPLOY_HOST}"
+"""
+
+[tasks."deploy:logs"]
+description = "Tail production logs (all containers)"
+run = """
+set -euo pipefail
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml logs -f --tail=100'
+"""
+
+[tasks."deploy:logs:erebus"]
+description = "Tail Erebus bot logs only"
+run = """
+set -euo pipefail
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'docker logs erebus -f --tail=100'
+"""
+
+[tasks."deploy:status"]
+description = "Show status of production containers"
+run = """
+set -euo pipefail
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml ps'
+"""
+
+[tasks."deploy:restart"]
+description = "Restart all production containers"
+run = """
+set -euo pipefail
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+echo "🔄 Restarting production containers..."
+ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml restart'
+echo "✅ Containers restarted"
+"""

@@ -1,0 +1,126 @@
+# Production Docker Compose for DigitalOcean deployment
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Includes:
+#   - Erebus Discord bot
+#   - Letta server (AI memory backend)
+#   - PostgreSQL with pgvector
+#   - Watchtower (auto-updates containers)
+
+services:
+  erebus:
+    image: ghcr.io/kylestratis/erebus:latest
+    container_name: erebus
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.scope=erebus"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LETTA_API_URL=http://letta:8283
+    volumes:
+      - ./logs:/app/logs
+      - ${OBSIDIAN_VAULT_PATH:-/opt/vault}:/vault:ro
+    networks:
+      - erebus-network
+    depends_on:
+      letta:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  letta:
+    image: letta/letta:latest
+    container_name: erebus-letta
+    restart: unless-stopped
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TODOIST_API_KEY=${TODOIST_API_KEY}
+      - LETTA_PG_URI=postgresql://letta:${POSTGRES_PASSWORD:-letta}@postgres:5432/letta
+      - LETTA_SERVER_HOST=0.0.0.0
+      - LETTA_SERVER_PORT=8283
+    networks:
+      - erebus-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8283/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: erebus-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=letta
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-letta}
+      - POSTGRES_DB=letta
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/letta/init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
+    networks:
+      - erebus-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U letta -d letta"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: erebus-watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+      - WATCHTOWER_ROLLING_RESTART=true
+      # Only watch erebus container (Letta updates manually)
+      - WATCHTOWER_SCOPE=erebus
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      - "com.centurylinklabs.watchtower.scope=erebus"
+    networks:
+      - erebus-network
+
+networks:
+  erebus-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: erebus-postgres-data
