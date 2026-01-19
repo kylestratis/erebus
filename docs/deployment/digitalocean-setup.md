@@ -179,15 +179,28 @@ docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs -f
 ```
 
-## 4. Configure GitHub Actions Secrets
+## 4. Create GitHub Environment
 
-In your GitHub repository, go to **Settings > Secrets and variables > Actions** and add:
+1. Go to **Settings > Environments**
+2. Create environment: `production`
+3. (Optional) Add protection rules:
+   - Required reviewers
+   - Wait timer
+
+## 5. Configure GitHub Actions Secrets
+
+Add these as **environment secrets** under the `production` environment:
+
+1. Go to **Settings > Environments > production**
+2. Under **Environment secrets**, click **Add secret** for each:
 
 | Secret | Description |
 |--------|-------------|
 | `DROPLET_HOST` | Your droplet's IP address |
 | `DROPLET_USER` | `deploy` |
 | `DROPLET_SSH_KEY` | Private SSH key (generate a new one for CI) |
+
+> **Why environment secrets?** They're only exposed to jobs that explicitly declare `environment: production`, providing better security than repository-wide secrets.
 
 ### Generate CI SSH key
 
@@ -201,14 +214,6 @@ ssh-copy-id -i ~/.ssh/erebus-deploy.pub deploy@YOUR_DROPLET_IP
 # Add PRIVATE key content to GitHub secret DROPLET_SSH_KEY
 cat ~/.ssh/erebus-deploy
 ```
-
-## 5. Create GitHub Environment
-
-1. Go to **Settings > Environments**
-2. Create environment: `production`
-3. (Optional) Add protection rules:
-   - Required reviewers
-   - Wait timer
 
 ## 6. Set Up Systemd Service (Optional)
 
@@ -257,8 +262,8 @@ docker compose -f docker-compose.prod.yml ps
 # Check Erebus logs
 docker logs erebus -f
 
-# Check Letta health
-curl http://localhost:8283/health
+# Check Letta health (port not exposed to host, use docker exec)
+docker exec erebus-letta curl -sL http://localhost:8283/health
 ```
 
 Test by sending a DM to your Discord bot.

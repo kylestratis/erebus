@@ -428,6 +428,193 @@
       "created_at": "2026-01-08T02:08:55.221114-05:00",
       "updated_at": "2026-01-08T02:08:55.221114-05:00",
       "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"files\":[\"agents/eidolon/client.py\"]}"
+    },
+    {
+      "id": 40,
+      "change_id": "48afba78-c6fc-4339-a7c7-88ebdaada83f",
+      "node_type": "observation",
+      "title": "User noted: add sleep time agent architecture to implementation plan",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T02:10:43.468608-05:00",
+      "updated_at": "2026-01-08T02:10:43.468608-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":85}"
+    },
+    {
+      "id": 41,
+      "change_id": "29702133-9c2b-48df-9624-120d79a0edcf",
+      "node_type": "action",
+      "title": "Added sleep-time agent tasks to impl plan",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T02:15:31.084472-05:00",
+      "updated_at": "2026-01-08T02:15:31.084472-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 42,
+      "change_id": "9668180c-e6cf-4da3-9b73-f0bd353913b7",
+      "node_type": "outcome",
+      "title": "Sleep-time agent tasks added to implementation.md",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-08T02:15:48.301618-05:00",
+      "updated_at": "2026-01-08T02:15:48.301618-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100}"
+    },
+    {
+      "id": 43,
+      "change_id": "8a02134d-9dcf-43c3-84c4-857e1b2e5628",
+      "node_type": "action",
+      "title": "Fixed tools.upsert API - removed invalid name param",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-09T09:11:22.456274-05:00",
+      "updated_at": "2026-01-09T09:11:22.456274-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 44,
+      "change_id": "43541cde-3603-42e1-a9a4-1bbab02b45d3",
+      "node_type": "action",
+      "title": "Integrated MCP tools with ToolRegistry for Letta",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T13:46:56.961774-05:00",
+      "updated_at": "2026-01-17T13:46:56.961774-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 45,
+      "change_id": "f3f8571d-3702-4a87-ae09-8d9212bd6618",
+      "node_type": "outcome",
+      "title": "Todoist MCP and scheduled tasks now visible to agent",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T13:47:42.141417-05:00",
+      "updated_at": "2026-01-17T13:47:42.141417-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100}"
+    },
+    {
+      "id": 46,
+      "change_id": "aad495c0-71e3-4f79-8888-ca086ddfbd29",
+      "node_type": "action",
+      "title": "Created system_status introspection tool",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T14:00:17.699609-05:00",
+      "updated_at": "2026-01-17T14:00:17.699609-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 47,
+      "change_id": "8b1c7909-a8ca-4418-a570-d0914aa0f340",
+      "node_type": "observation",
+      "title": "System tools not visible: setup order issue",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T14:22:35.996544-05:00",
+      "updated_at": "2026-01-17T14:22:35.996544-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 48,
+      "change_id": "6160c186-93e8-4a56-b934-8071cdea1e9b",
+      "node_type": "action",
+      "title": "Reorder setup to register system tools before EidolonMemory",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T14:22:43.151754-05:00",
+      "updated_at": "2026-01-17T14:22:43.151754-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 49,
+      "change_id": "f3d5cfdb-4f07-445c-8993-0399380b14f4",
+      "node_type": "outcome",
+      "title": "Fixed setup order - system tools now registered before EidolonMemory",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T14:23:55.166935-05:00",
+      "updated_at": "2026-01-17T14:23:55.166935-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 50,
+      "change_id": "45a49e93-851f-46a3-a882-655361698d85",
+      "node_type": "outcome",
+      "title": "Added native Letta MCP migration task to implementation.md",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T14:24:47.960825-05:00",
+      "updated_at": "2026-01-17T14:24:47.960825-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100,\"files\":[\"implementation.md\"]}"
+    },
+    {
+      "id": 51,
+      "change_id": "1ec392f0-4754-4e36-8ec5-0b03dc0e01df",
+      "node_type": "goal",
+      "title": "Unified Configuration System",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T21:59:09.533130-05:00",
+      "updated_at": "2026-01-17T21:59:09.533130-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90,\"prompt\":\"Build unified config system, document in README before pushing\"}"
+    },
+    {
+      "id": 52,
+      "change_id": "6de543a8-09cc-449b-9ded-cf3290ff3263",
+      "node_type": "decision",
+      "title": "Use TOML for config, env for secrets",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-17T21:59:58.183140-05:00",
+      "updated_at": "2026-01-17T21:59:58.183140-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 53,
+      "change_id": "4d1dd2c0-5ef4-46d8-bdac-7c1d2230b3cb",
+      "node_type": "goal",
+      "title": "Deploy Erebus to DigitalOcean production",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-18T23:21:54.878999-05:00",
+      "updated_at": "2026-01-18T23:21:54.878999-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 54,
+      "change_id": "d48ce0c8-c640-4aa6-93e9-5de1a50f01d9",
+      "node_type": "action",
+      "title": "Configured GitHub environment secrets for production deployment",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-18T23:21:59.375900-05:00",
+      "updated_at": "2026-01-18T23:21:59.375900-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 55,
+      "change_id": "497ac69d-c5d4-4944-959f-a9ac6925c208",
+      "node_type": "action",
+      "title": "Updated deployment docs: clarified environment vs repo secrets, fixed Letta healthcheck",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-18T23:21:59.391301-05:00",
+      "updated_at": "2026-01-18T23:21:59.391301-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 56,
+      "change_id": "527c7631-5ef8-49fd-8605-a9a45ca4a371",
+      "node_type": "outcome",
+      "title": "DO droplet provisioned, GitHub secrets configured, docs updated",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-18T23:39:24.700539-05:00",
+      "updated_at": "2026-01-18T23:39:24.700539-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
     }
   ],
   "edges": [
@@ -815,6 +1002,116 @@
       "weight": 1.0,
       "rationale": "Security fix applied",
       "created_at": "2026-01-08T02:08:55.226679-05:00"
+    },
+    {
+      "id": 36,
+      "from_node_id": 40,
+      "to_node_id": 41,
+      "from_change_id": "48afba78-c6fc-4339-a7c7-88ebdaada83f",
+      "to_change_id": "29702133-9c2b-48df-9624-120d79a0edcf",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Documented as implementation task",
+      "created_at": "2026-01-08T02:15:44.626484-05:00"
+    },
+    {
+      "id": 37,
+      "from_node_id": 41,
+      "to_node_id": 42,
+      "from_change_id": "29702133-9c2b-48df-9624-120d79a0edcf",
+      "to_change_id": "9668180c-e6cf-4da3-9b73-f0bd353913b7",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Successfully added to plan",
+      "created_at": "2026-01-08T02:15:51.755969-05:00"
+    },
+    {
+      "id": 38,
+      "from_node_id": 34,
+      "to_node_id": 43,
+      "from_change_id": "cc9b59cc-24fc-46b1-b374-862cb096490a",
+      "to_change_id": "8a02134d-9dcf-43c3-84c4-857e1b2e5628",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fixed API mismatch preventing tool registration",
+      "created_at": "2026-01-09T09:11:27.315442-05:00"
+    },
+    {
+      "id": 39,
+      "from_node_id": 44,
+      "to_node_id": 45,
+      "from_change_id": "43541cde-3603-42e1-a9a4-1bbab02b45d3",
+      "to_change_id": "f3f8571d-3702-4a87-ae09-8d9212bd6618",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementation complete",
+      "created_at": "2026-01-17T13:47:45.530960-05:00"
+    },
+    {
+      "id": 40,
+      "from_node_id": 47,
+      "to_node_id": 48,
+      "from_change_id": "8b1c7909-a8ca-4418-a570-d0914aa0f340",
+      "to_change_id": "6160c186-93e8-4a56-b934-8071cdea1e9b",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Root cause identified",
+      "created_at": "2026-01-17T14:22:47.119896-05:00"
+    },
+    {
+      "id": 41,
+      "from_node_id": 48,
+      "to_node_id": 49,
+      "from_change_id": "6160c186-93e8-4a56-b934-8071cdea1e9b",
+      "to_change_id": "f3d5cfdb-4f07-445c-8993-0399380b14f4",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fix verified with 142 passing tests",
+      "created_at": "2026-01-17T14:23:59.119920-05:00"
+    },
+    {
+      "id": 42,
+      "from_node_id": 51,
+      "to_node_id": 52,
+      "from_change_id": "1ec392f0-4754-4e36-8ec5-0b03dc0e01df",
+      "to_change_id": "6de543a8-09cc-449b-9ded-cf3290ff3263",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Architecture decision",
+      "created_at": "2026-01-17T22:00:02.523041-05:00"
+    },
+    {
+      "id": 43,
+      "from_node_id": 53,
+      "to_node_id": 54,
+      "from_change_id": "4d1dd2c0-5ef4-46d8-bdac-7c1d2230b3cb",
+      "to_change_id": "d48ce0c8-c640-4aa6-93e9-5de1a50f01d9",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Configuration step",
+      "created_at": "2026-01-18T23:22:03.492551-05:00"
+    },
+    {
+      "id": 44,
+      "from_node_id": 53,
+      "to_node_id": 55,
+      "from_change_id": "4d1dd2c0-5ef4-46d8-bdac-7c1d2230b3cb",
+      "to_change_id": "497ac69d-c5d4-4944-959f-a9ac6925c208",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Documentation updates",
+      "created_at": "2026-01-18T23:22:03.499261-05:00"
+    },
+    {
+      "id": 45,
+      "from_node_id": 53,
+      "to_node_id": 56,
+      "from_change_id": "4d1dd2c0-5ef4-46d8-bdac-7c1d2230b3cb",
+      "to_change_id": "527c7631-5ef8-49fd-8605-a9a45ca4a371",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Deployment progress",
+      "created_at": "2026-01-18T23:39:28.637639-05:00"
     }
   ]
 }
