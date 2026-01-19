@@ -166,7 +166,7 @@ class ErebusBot(commands.Bot):
         """
         # Only initialize if we have integrations configured
         if not self.config.todoist_api_token:
-            logger.info("No MCP integrations configured (TODOIST_API_TOKEN not set)")
+            logger.info("No MCP integrations configured (TODOIST_API_KEY not set)")
             return
 
         try:

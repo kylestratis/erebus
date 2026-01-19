@@ -210,7 +210,7 @@ class ErebusConfig(BaseSettings):
     - DISCORD_BOT_TOKEN, DISCORD_USER_ID, DISCORD_GUILD_ID
     - LETTA_API_URL, LETTA_API_KEY
     - OBSIDIAN_VAULT_PATH
-    - TODOIST_API_TOKEN
+    - TODOIST_API_KEY
     - LOG_LEVEL, ENVIRONMENT
     - SCHEDULER_TIMEZONE, JOB_DAILY_NOTE_ENABLED, etc.
 
@@ -543,7 +543,7 @@ def _parse_mcp_servers(data: dict[str, Any], todoist_token: str | None) -> list[
                 },
             )
         )
-        logger.debug("Auto-configured Todoist MCP server from TODOIST_API_TOKEN")
+        logger.debug("Auto-configured Todoist MCP server from TODOIST_API_KEY")
 
     return servers
 

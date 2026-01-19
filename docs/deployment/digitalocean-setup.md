@@ -133,17 +133,31 @@ DISCORD_BOT_TOKEN=your_discord_bot_token
 DISCORD_USER_ID=your_discord_user_id
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
-TODOIST_API_TOKEN=your_todoist_token
+TODOIST_API_KEY=your_todoist_token
 POSTGRES_PASSWORD=a_secure_random_password
 ENVIRONMENT=production
 LOG_LEVEL=INFO
 ```
 
+### Build the Docker image (first time only)
+
+Before the first deploy, you need to build and push the image to GHCR:
+
+1. Go to your GitHub repo → **Actions** tab
+2. Select the **Deploy** workflow
+3. Click **Run workflow** → **Run workflow**
+
+This builds the image and pushes it to `ghcr.io/kylestratis/erebus:latest`. The deploy step will fail (server not ready yet), but the image will be available.
+
 ### Log in to GitHub Container Registry
 
+Create a classic Personal Access Token at https://github.com/settings/tokens/new:
+- **Note**: `erebus-deploy` (or similar)
+- **Scopes**: Select `read:packages`
+
+Then log in on the droplet:
+
 ```bash
-# Create a GitHub Personal Access Token with `read:packages` scope
-# Then login:
 echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 ```
 

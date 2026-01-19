@@ -632,7 +632,7 @@ class CoreCog(commands.Cog, name="Core"):
         if not self.bot.mcp:
             await interaction.response.send_message(
                 "*Erebus has no connection to Todoist...*\n\n"
-                "Todoist not configured. Set `TODOIST_API_TOKEN` to use /capture.",
+                "Todoist not configured. Set `TODOIST_API_KEY` to use /capture.",
                 ephemeral=True,
             )
             return
@@ -730,7 +730,7 @@ class CoreCog(commands.Cog, name="Core"):
         if not self.bot.mcp:
             await interaction.response.send_message(
                 "*Erebus has no connection to Todoist...*\n\n"
-                "Todoist not configured. Set `TODOIST_API_TOKEN` to use /sync.",
+                "Todoist not configured. Set `TODOIST_API_KEY` to use /sync.",
                 ephemeral=True,
             )
             return

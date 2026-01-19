@@ -9,7 +9,7 @@ Erebus integrates with Todoist via the official [Todoist AI MCP server](https://
 Set your Todoist API token in `.env`:
 
 ```bash
-TODOIST_API_TOKEN=your_todoist_api_token_here
+TODOIST_API_KEY=your_todoist_api_token_here
 ```
 
 Get your API token from: https://todoist.com/app/settings/integrations/developer
@@ -99,7 +99,7 @@ Discord User
 
 ### Tools not appearing
 
-1. Check `TODOIST_API_TOKEN` is set correctly
+1. Check `TODOIST_API_KEY` is set correctly
 2. Verify npx can run: `npx @doist/todoist-ai --help`
 3. Check bot logs for MCP connection errors
 

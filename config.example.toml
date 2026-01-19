@@ -7,7 +7,7 @@
 # NOTE: All other configuration is done via environment variables in .env.
 # This file is ONLY for MCP servers which require array syntax.
 #
-# IMPORTANT: Todoist is auto-configured if TODOIST_API_TOKEN is set in .env.
+# IMPORTANT: Todoist is auto-configured if TODOIST_API_KEY is set in .env.
 # You only need entries here for custom MCP servers or to override defaults.
 
 # ---------------------------------------------------------------------------

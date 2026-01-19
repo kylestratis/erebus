@@ -123,7 +123,7 @@ OPENAI_API_KEY=sk-...         # Used by Letta for embeddings
 LETTA_API_URL=http://localhost:8283
 
 # Optional integrations
-TODOIST_API_TOKEN=your_todoist_token
+TODOIST_API_KEY=your_todoist_token
 OBSIDIAN_VAULT_PATH=/path/to/your/vault
 ```
 
@@ -255,7 +255,7 @@ All configuration is done via environment variables in `.env`:
 
 | Variable | Description |
 |----------|-------------|
-| `TODOIST_API_TOKEN` | Todoist API token for task management |
+| `TODOIST_API_KEY` | Todoist API token for task management |
 
 #### Optional
 
@@ -281,7 +281,7 @@ See `.env.example` for a complete template with all available options.
 MCP servers are configured in `config.toml` (for array syntax support):
 
 ```toml
-# Todoist is auto-configured from TODOIST_API_TOKEN in .env
+# Todoist is auto-configured from TODOIST_API_KEY in .env
 # Only add entries here for custom MCP servers
 
 [[mcp.servers]]
