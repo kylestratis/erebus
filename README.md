@@ -326,6 +326,7 @@ See `config.example.toml` for more examples.
 - [EidolonMemory Architecture](docs/eidolon-memory.md)
 - [MCP Server Documentation](docs/mcp/) (TODO)
 - [Deployment Guide](docs/deployment/) (TODO)
+- [Deciduous History](https://kylestratis.github.io/erebus/)
 
 ## Security
 
