@@ -60,28 +60,7 @@ jobs:
     needs: build-and-push
     if: github.ref == 'refs/heads/main'
     environment: production
-
     steps:
-      - name: Debug - Check secrets availability
-        run: |
-          if [ -z "${{ secrets.DROPLET_HOST }}" ]; then
-            echo "DROPLET_HOST is empty"
-          else
-            echo "DROPLET_HOST is set (length: ${#DROPLET_HOST})"
-          fi
-          if [ -z "${{ secrets.DROPLET_USER }}" ]; then
-            echo "DROPLET_USER is empty"
-          else
-            echo "DROPLET_USER is set"
-          fi
-          if [ -z "${{ secrets.DROPLET_SSH_KEY }}" ]; then
-            echo "DROPLET_SSH_KEY is empty"
-          else
-            echo "DROPLET_SSH_KEY is set"
-          fi
-        env:
-          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
-
       - name: Deploy to DigitalOcean
         uses: appleboy/ssh-action@v1.2.0
         with:
