@@ -165,7 +165,7 @@ class ErebusBot(commands.Bot):
         The Todoist MCP server configuration for Letta is done in _setup_eidolon().
         """
         # Only initialize if we have integrations configured
-        if not self.config.todoist_api_token:
+        if not self.config.todoist_api_key:
             logger.info("No MCP integrations configured (TODOIST_API_KEY not set)")
             return
 
@@ -174,8 +174,8 @@ class ErebusBot(commands.Bot):
             await self.mcp.start()
 
             # Connect to Todoist MCP server (local client for direct access)
-            if self.config.todoist_api_token:
-                todoist_config = create_todoist_config(self.config.todoist_api_token)
+            if self.config.todoist_api_key:
+                todoist_config = create_todoist_config(self.config.todoist_api_key)
                 await self.mcp.connect(todoist_config)
                 logger.info("Connected to Todoist MCP server (local client)")
 
@@ -236,13 +236,13 @@ class ErebusBot(commands.Bot):
             # Configure MCP servers for Letta's native MCP support
             mcp_servers: list[MCPServerConfig] = []
 
-            if self.config.todoist_api_token:
+            if self.config.todoist_api_key:
                 mcp_servers.append(
                     MCPServerConfig(
                         name="todoist",
                         command="npx",
                         args=["@doist/todoist-ai"],
-                        env={"TODOIST_API_KEY": self.config.todoist_api_token},
+                        env={"TODOIST_API_KEY": self.config.todoist_api_key},
                     )
                 )
                 logger.info("Configured Todoist for Letta native MCP")

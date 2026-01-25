@@ -637,6 +637,83 @@
       "created_at": "2026-01-19T15:02:53.701543-05:00",
       "updated_at": "2026-01-19T15:02:53.701543-05:00",
       "metadata_json": "{\"branch\":\"main\",\"confidence\":100}"
+    },
+    {
+      "id": 59,
+      "change_id": "79a4ba90-100e-48ca-93d6-e9f65807fe22",
+      "node_type": "goal",
+      "title": "Fix stuck agent PENDING_APPROVAL issue",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-24T22:59:03.395556-05:00",
+      "updated_at": "2026-01-24T22:59:03.395556-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":85,\"prompt\":\"Investigate and fix where the agent gets stuck waiting for user confirmation for tool use\"}"
+    },
+    {
+      "id": 60,
+      "change_id": "1fc25c6b-75dc-4eba-962e-c436bad931a8",
+      "node_type": "decision",
+      "title": "Implement startup recovery for pending approvals",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-24T22:59:07.742566-05:00",
+      "updated_at": "2026-01-24T22:59:07.742566-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90}"
+    },
+    {
+      "id": 61,
+      "change_id": "5f8d9b3d-33fc-4535-abe4-a31a6e472a1a",
+      "node_type": "action",
+      "title": "Implement _cancel_pending_approvals method",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-24T23:00:22.522489-05:00",
+      "updated_at": "2026-01-24T23:00:22.522489-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90,\"files\":[\"agents/eidolon/client.py\"]}"
+    },
+    {
+      "id": 62,
+      "change_id": "e29bfa79-90dc-421c-b37e-31a8f4130855",
+      "node_type": "outcome",
+      "title": "Tests pass, recovery mechanism implemented",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-24T23:00:26.395928-05:00",
+      "updated_at": "2026-01-24T23:00:26.395928-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 63,
+      "change_id": "2608864a-1687-4fb4-9c62-079bfbdb545a",
+      "node_type": "action",
+      "title": "Fix code review issues: process all approvals, better logging",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-24T23:24:57.530046-05:00",
+      "updated_at": "2026-01-24T23:24:57.530046-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":90,\"files\":[\"agents/eidolon/client.py\"]}"
+    },
+    {
+      "id": 64,
+      "change_id": "cca13a90-35b3-4d16-9fd2-5fb72a10924a",
+      "node_type": "action",
+      "title": "Add 9 tests for _cancel_pending_approvals",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-24T23:28:12.570562-05:00",
+      "updated_at": "2026-01-24T23:28:12.570562-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":95,\"files\":[\"tests/test_eidolon.py\"]}"
+    },
+    {
+      "id": 65,
+      "change_id": "94ed1e4e-b7ab-45d1-b467-dcf44d835f29",
+      "node_type": "outcome",
+      "title": "Committed PENDING_APPROVAL fix with tests",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-24T23:29:24.278669-05:00",
+      "updated_at": "2026-01-24T23:29:24.278669-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"commit\":\"32968d9\",\"confidence\":95}"
     }
   ],
   "edges": [
@@ -1156,6 +1233,72 @@
       "weight": 1.0,
       "rationale": "CI/CD working",
       "created_at": "2026-01-19T15:02:53.710733-05:00"
+    },
+    {
+      "id": 48,
+      "from_node_id": 59,
+      "to_node_id": 60,
+      "from_change_id": "79a4ba90-100e-48ca-93d6-e9f65807fe22",
+      "to_change_id": "1fc25c6b-75dc-4eba-962e-c436bad931a8",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementation approach",
+      "created_at": "2026-01-24T22:59:08.036175-05:00"
+    },
+    {
+      "id": 49,
+      "from_node_id": 60,
+      "to_node_id": 61,
+      "from_change_id": "1fc25c6b-75dc-4eba-962e-c436bad931a8",
+      "to_change_id": "5f8d9b3d-33fc-4535-abe4-a31a6e472a1a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementation",
+      "created_at": "2026-01-24T23:00:22.780033-05:00"
+    },
+    {
+      "id": 50,
+      "from_node_id": 61,
+      "to_node_id": 62,
+      "from_change_id": "5f8d9b3d-33fc-4535-abe4-a31a6e472a1a",
+      "to_change_id": "e29bfa79-90dc-421c-b37e-31a8f4130855",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "All tests pass",
+      "created_at": "2026-01-24T23:00:26.666541-05:00"
+    },
+    {
+      "id": 51,
+      "from_node_id": 62,
+      "to_node_id": 63,
+      "from_change_id": "e29bfa79-90dc-421c-b37e-31a8f4130855",
+      "to_change_id": "2608864a-1687-4fb4-9c62-079bfbdb545a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Code review fixes",
+      "created_at": "2026-01-24T23:24:57.811426-05:00"
+    },
+    {
+      "id": 52,
+      "from_node_id": 63,
+      "to_node_id": 64,
+      "from_change_id": "2608864a-1687-4fb4-9c62-079bfbdb545a",
+      "to_change_id": "cca13a90-35b3-4d16-9fd2-5fb72a10924a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Added test coverage",
+      "created_at": "2026-01-24T23:28:12.860216-05:00"
+    },
+    {
+      "id": 53,
+      "from_node_id": 64,
+      "to_node_id": 65,
+      "from_change_id": "cca13a90-35b3-4d16-9fd2-5fb72a10924a",
+      "to_change_id": "94ed1e4e-b7ab-45d1-b467-dcf44d835f29",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Committed to main",
+      "created_at": "2026-01-24T23:29:24.558037-05:00"
     }
   ]
 }

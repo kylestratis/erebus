@@ -23,7 +23,7 @@ services:
       - LETTA_API_URL=http://letta:8283
     volumes:
       - ./logs:/app/logs
-      - ${OBSIDIAN_VAULT_PATH:-/opt/vault}:/vault:ro
+      - ${VAULT_HOST_PATH:-/opt/vault}:/vault
     networks:
       - erebus-network
     depends_on:

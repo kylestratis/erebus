@@ -249,7 +249,7 @@ class ErebusConfig(BaseSettings):
         agent: Agent behavior configuration.
         scheduler: Scheduler configuration.
         mcp_servers: MCP server configurations.
-        todoist_api_token: Todoist API token.
+        todoist_api_key: Todoist API key.
     """
 
     model_config = SettingsConfigDict(
@@ -305,7 +305,7 @@ class ErebusConfig(BaseSettings):
     job_erebus_journal_cron: str = "58 23 * * *"
 
     # Integration tokens (from env)
-    todoist_api_token: str | None = None
+    todoist_api_key: str | None = None
 
     # Private attributes for parsed values
     _allowed_user_ids_set: set[int] = PrivateAttr(default_factory=set)
@@ -364,14 +364,14 @@ class ErebusConfig(BaseSettings):
             return ""
         return v
 
-    @field_validator("todoist_api_token", "letta_api_key", mode="before")
+    @field_validator("todoist_api_key", "letta_api_key", mode="before")
     @classmethod
     def filter_placeholder_values(cls, v: str | None) -> str | None:
         """Filter out placeholder values from .env.example."""
         if v is None:
             return None
         placeholders = {
-            "your_todoist_api_token_here",
+            "your_todoist_api_key_here",
             "optional_letta_api_key",
         }
         if v in placeholders:
@@ -603,7 +603,7 @@ def get_config() -> ErebusConfig:
     config = ErebusConfig()
 
     # Parse MCP servers from TOML
-    config._mcp_servers = _parse_mcp_servers(toml_data, config.todoist_api_token)
+    config._mcp_servers = _parse_mcp_servers(toml_data, config.todoist_api_key)
     config._toml_loaded = bool(toml_data)
 
     return config
