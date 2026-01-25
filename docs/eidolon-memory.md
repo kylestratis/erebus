@@ -183,7 +183,7 @@ TODOIST_API_KEY=your-todoist-key
 ### Verify Connection
 
 ```bash
-curl http://localhost:8283/health
+curl -sL http://localhost:8283/health
 ```
 
 ## Usage

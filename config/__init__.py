@@ -1,14 +1,15 @@
 """Unified configuration system for Erebus.
 
-This module provides a hierarchical configuration system that:
-1. Loads base configuration from config.toml
-2. Overrides with environment variables (especially for secrets)
+This module provides a configuration system that:
+1. Loads settings from a single environment file (Option A pattern)
+2. Loads MCP server configs from config.toml
 3. Validates all configuration at startup
 
-Configuration hierarchy:
-- config.toml: Default values and non-sensitive configuration
-- Environment variables: Secrets and environment-specific overrides
-- CLI arguments: Runtime overrides (handled by bot.__main__)
+Environment files (single file per environment, not cascaded):
+- .env.local: Local development settings (takes priority if exists)
+- .env: Production settings (on droplet, .env.production is synced as .env)
+
+This approach keeps environments isolated - you edit one file for your context.
 
 Usage:
     from config import get_config
@@ -39,6 +40,27 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_FILE = _PROJECT_ROOT / "config.toml"
 _ENV_FILE = _PROJECT_ROOT / ".env"
+_ENV_LOCAL_FILE = _PROJECT_ROOT / ".env.local"
+
+
+def _get_active_env_file() -> Path | None:
+    """Get the active environment file to load.
+
+    Option A pattern (environment-specific files):
+    - .env.local: Used for local development (takes priority if exists)
+    - .env: Used in production (on droplet, .env.production is synced as .env)
+
+    Only ONE file is loaded, not a cascade. This keeps environments isolated.
+    """
+    if _ENV_LOCAL_FILE.exists():
+        return _ENV_LOCAL_FILE
+    if _ENV_FILE.exists():
+        return _ENV_FILE
+    return None
+
+
+# Compute active env file at module load time for use in SettingsConfigDict
+_ACTIVE_ENV_FILE = _get_active_env_file()
 
 
 class Environment(str, Enum):
@@ -203,8 +225,12 @@ class ErebusConfig(BaseSettings):
     """Unified Erebus configuration.
 
     Loads configuration from:
-    1. config.toml (defaults and non-sensitive values)
-    2. Environment variables (secrets and overrides)
+    1. Environment file (.env.local for development, .env for production)
+    2. config.toml (MCP server configurations only)
+
+    Environment files (Option A pattern - single file per environment):
+    - .env.local: Local development settings (takes priority if exists)
+    - .env: Production settings (on droplet, .env.production is synced as .env)
 
     Environment variables use uppercase with underscores:
     - DISCORD_BOT_TOKEN, DISCORD_USER_ID, DISCORD_GUILD_ID
@@ -227,7 +253,10 @@ class ErebusConfig(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=_ENV_FILE,
+        # Option A: Load a single environment-specific file
+        # - .env.local if it exists (local development)
+        # - .env otherwise (production on droplet)
+        env_file=_ACTIVE_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -553,16 +582,20 @@ def get_config() -> ErebusConfig:
     """Get cached application configuration.
 
     Loads configuration from:
-    1. Environment variables (via pydantic-settings)
+    1. Environment file (.env.local if exists, otherwise .env)
     2. config.toml (for MCP server configurations only)
 
-    Note: TOML is only used for MCP server configuration which requires
-    array syntax. All other settings come from environment variables
-    (loaded from .env file).
+    The active env file is logged at startup for debugging.
 
     Returns:
         Validated ErebusConfig instance.
     """
+    # Log which env file is being used
+    if _ACTIVE_ENV_FILE:
+        logger.info(f"Loading configuration from {_ACTIVE_ENV_FILE}")
+    else:
+        logger.warning("No .env.local or .env file found, using environment variables only")
+
     # Load TOML config (used only for MCP servers)
     toml_data = _load_toml_config()
 

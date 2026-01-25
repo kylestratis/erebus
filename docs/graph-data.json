@@ -615,6 +615,28 @@
       "created_at": "2026-01-18T23:39:24.700539-05:00",
       "updated_at": "2026-01-18T23:39:24.700539-05:00",
       "metadata_json": "{\"branch\":\"main\",\"confidence\":95}"
+    },
+    {
+      "id": 57,
+      "change_id": "a34412e9-e4df-4577-aac6-4a4fd12a03e9",
+      "node_type": "outcome",
+      "title": "Syncthing vault sync configured and working",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-19T15:00:51.161078-05:00",
+      "updated_at": "2026-01-19T15:00:51.161078-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100}"
+    },
+    {
+      "id": 58,
+      "change_id": "d924bc5f-eafc-4a6b-b7f1-5fdfb61b6b34",
+      "node_type": "outcome",
+      "title": "GitHub Actions deploy fixed - environment secrets working",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-19T15:02:53.701543-05:00",
+      "updated_at": "2026-01-19T15:02:53.701543-05:00",
+      "metadata_json": "{\"branch\":\"main\",\"confidence\":100}"
     }
   ],
   "edges": [
@@ -1112,6 +1134,28 @@
       "weight": 1.0,
       "rationale": "Deployment progress",
       "created_at": "2026-01-18T23:39:28.637639-05:00"
+    },
+    {
+      "id": 46,
+      "from_node_id": 53,
+      "to_node_id": 57,
+      "from_change_id": "4d1dd2c0-5ef4-46d8-bdac-7c1d2230b3cb",
+      "to_change_id": "a34412e9-e4df-4577-aac6-4a4fd12a03e9",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Vault sync complete",
+      "created_at": "2026-01-19T15:00:51.172206-05:00"
+    },
+    {
+      "id": 47,
+      "from_node_id": 53,
+      "to_node_id": 58,
+      "from_change_id": "4d1dd2c0-5ef4-46d8-bdac-7c1d2230b3cb",
+      "to_change_id": "d924bc5f-eafc-4a6b-b7f1-5fdfb61b6b34",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "CI/CD working",
+      "created_at": "2026-01-19T15:02:53.710733-05:00"
     }
   ]
 }

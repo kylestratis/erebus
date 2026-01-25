@@ -84,17 +84,19 @@ mise install
 uv sync
 
 # Copy environment template and add your credentials
-cp .env.example .env
-# Edit .env with your Discord token, user ID, and API keys
+cp .env.example .env.local
+# Edit .env.local with your Discord token, user ID, and API keys
 ```
 
 ### Start Letta Server
 
-Letta provides the stateful memory backend. Start it with Docker:
+Letta provides the stateful memory backend. Start it with mise (auto-detects your env file):
 
 ```bash
-cd docker/letta
-docker compose up -d
+mise run letta:up      # Start Letta + PostgreSQL
+mise run letta:logs    # Watch logs (Ctrl+C to exit)
+mise run letta:status  # Check container status
+mise run letta:down    # Stop containers
 ```
 
 This starts:
@@ -103,12 +105,12 @@ This starts:
 
 Verify it's running:
 ```bash
-curl http://localhost:8283/health
+curl -sL http://localhost:8283/v1/health
 ```
 
 ### Configure Environment
 
-Edit `.env` with your credentials:
+Edit `.env.local` with your credentials:
 
 ```bash
 # Required
@@ -169,8 +171,13 @@ See [docs/deployment/digitalocean-setup.md](docs/deployment/digitalocean-setup.m
 # On your droplet
 git clone https://github.com/kylestratis/erebus.git /opt/erebus
 cd /opt/erebus
+
+# Option 1: Sync from local machine (recommended)
+# On your local machine: mise run deploy:env
+
+# Option 2: Create .env directly on droplet
 cp .env.example .env
-nano .env  # Add your credentials
+nano .env  # Add your production credentials
 
 # Start all services
 docker compose -f docker-compose.prod.yml up -d
@@ -193,11 +200,11 @@ Required GitHub Secrets:
 Use mise for deployment operations:
 
 ```bash
-# Add to your .env
+# Add to your .env.production
 DEPLOY_HOST=your-droplet-ip
 DEPLOY_USER=deploy
 
-# Sync environment changes
+# Sync .env.production to droplet as .env
 mise run deploy:env
 
 # View logs
@@ -210,13 +217,36 @@ mise run deploy:ssh
 mise run deploy:status
 ```
 
-### Vault Sync with Syncthing
+## Obsidian Vault Setup
 
-To sync your Obsidian vault to the droplet:
+Erebus can read and write to your Obsidian vault for daily notes, idea capture, and more.
 
-1. Install Syncthing on the droplet
-2. Configure folder sync from your local vault
-3. Set `OBSIDIAN_VAULT_PATH` to the synced location
+### Local Development
+
+Set the vault path in `.env`:
+
+```bash
+OBSIDIAN_VAULT_PATH=/Users/you/Obsidian/your-vault
+```
+
+### Production (Syncthing)
+
+For the droplet to access your vault, use Syncthing for encrypted peer-to-peer sync:
+
+1. Install Syncthing on both your Mac and the droplet
+2. Pair the devices and share your vault folder
+3. Set `OBSIDIAN_VAULT_PATH=/opt/vault` on the droplet
+
+See [docs/deployment/syncthing.md](docs/deployment/syncthing.md) for the complete setup guide.
+
+### Vault Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OBSIDIAN_VAULT_PATH` | - | Path to vault root |
+| `OBSIDIAN_TEMPLATES_PATH` | `Templates` | Relative path to templates |
+| `OBSIDIAN_DAILY_NOTES_PATH` | `Calendar/Daily Notes` | Relative path to daily notes |
+| `OBSIDIAN_DAILY_NOTE_FORMAT` | `%Y-%m-%d` | strftime format for filenames |
 
 ## Configuration Reference
 
@@ -227,9 +257,21 @@ Erebus uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydant
 | File | Purpose | Git-tracked |
 |------|---------|-------------|
 | `.env.example` | Template for all settings | Yes |
-| `.env` | Your configuration | No |
+| `.env.local` | Local development settings | No |
+| `.env.production` | Production settings (synced as `.env` to droplet) | No |
 | `config.example.toml` | MCP server configuration template | Yes |
 | `config.toml` | Your MCP server configuration | No |
+
+**Environment files (Option A - one file per environment):**
+- `.env.local`: Your local development settings (takes priority if exists)
+- `.env.production`: Your production settings (synced to droplet as `.env`)
+
+Only ONE file is loaded - this keeps environments isolated and avoids accidental overrides.
+
+**Setup:**
+- **Local development**: Copy `.env.example` to `.env.local` and configure for your machine
+- **Production**: Copy `.env.example` to `.env.production` and configure for the droplet
+- **Deploy**: Run `mise run deploy:env` to sync `.env.production` to the droplet as `.env`
 
 ### Command Line Options
 
@@ -324,8 +366,10 @@ See `config.example.toml` for more examples.
 
 - [Implementation Checklist](https://github.com/kylestratis/erebus/wiki/Implementation)
 - [EidolonMemory Architecture](docs/eidolon-memory.md)
-- [MCP Server Documentation](docs/mcp/) (TODO)
-- [Deployment Guide](docs/deployment/) (TODO)
+- [Obsidian Vault Architecture](docs/mcp/obsidian-architecture.md)
+- **Deployment**
+  - [DigitalOcean Setup](docs/deployment/digitalocean-setup.md)
+  - [Syncthing (Vault Sync)](docs/deployment/syncthing.md)
 - [Deciduous History](https://kylestratis.github.io/erebus/)
 
 ## Security

@@ -1,12 +1,14 @@
 # Letta Server with PostgreSQL
 #
-# Usage (from docker/letta directory):
-#   docker compose --env-file ../../.env up -d
+# Usage (recommended - auto-detects env file):
+#   mise run letta:up
+#   mise run letta:down
+#   mise run letta:logs
 #
-# Or from project root:
-#   docker compose -f docker/letta/docker-compose.yml --env-file .env up -d
+# Manual usage (from project root):
+#   docker compose -f docker/letta/docker-compose.yml --env-file .env.local up -d
 #
-# Environment variables required (from .env in project root):
+# Environment variables required (from .env.local or .env in project root):
 #   ANTHROPIC_API_KEY - For Claude model access
 #   OPENAI_API_KEY - For embeddings (text-embedding-3-small)
 #   TODOIST_API_KEY - For Todoist MCP server (native MCP support)
@@ -33,11 +35,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8283/health"]
+      test: ["CMD-SHELL", "curl -sL -o /dev/null -w '%{http_code}' http://localhost:8283/v1/models | grep -qE '^2'"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 180s
 
   postgres:
     image: pgvector/pgvector:pg16

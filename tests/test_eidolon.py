@@ -574,3 +574,226 @@ class TestToolConversion:
 
         result = get_tool_names(tools)
         assert result == ["x", "y", "z"]
+
+
+class TestCancelPendingApprovals:
+    """Tests for _cancel_pending_approvals recovery mechanism."""
+
+    @pytest.fixture
+    def mock_letta(self) -> MagicMock:
+        """Create a mock AsyncLetta client."""
+        mock = MagicMock()
+        # Default: empty messages list
+        mock.agents.messages.list = AsyncMock(return_value=[])
+        mock.agents.messages.create = AsyncMock(return_value=MagicMock())
+        # Mock agents.list for initialization
+        mock_page = MagicMock()
+        mock_page.items = []
+        mock.agents.list = AsyncMock(return_value=mock_page)
+        return mock
+
+    def _create_approval_message(
+        self, tool_name: str = "test_tool", tool_call_id: str = "call-123"
+    ) -> MagicMock:
+        """Create a mock approval_request_message."""
+        msg = MagicMock()
+        msg.message_type = "approval_request_message"
+        msg.tool_call = MagicMock()
+        msg.tool_call.name = tool_name
+        msg.tool_call.tool_call_id = tool_call_id
+        return msg
+
+    def _create_regular_message(self, msg_type: str = "user_message") -> MagicMock:
+        """Create a mock non-approval message."""
+        msg = MagicMock()
+        msg.message_type = msg_type
+        return msg
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_no_messages_returns_zero(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Returns 0 when agent has no messages."""
+        mock_letta.agents.messages.list = AsyncMock(return_value=[])
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        result = await eidolon._cancel_pending_approvals("agent-123")
+
+        assert result == 0
+        mock_letta.agents.messages.create.assert_not_called()
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_no_pending_approvals_returns_zero(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Returns 0 when no approval_request_message in messages."""
+        messages = [
+            self._create_regular_message("user_message"),
+            self._create_regular_message("assistant_message"),
+            self._create_regular_message("tool_return_message"),
+        ]
+        mock_letta.agents.messages.list = AsyncMock(return_value=messages)
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        result = await eidolon._cancel_pending_approvals("agent-123")
+
+        assert result == 0
+        mock_letta.agents.messages.create.assert_not_called()
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_cancels_single_pending_approval(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Cancels a single pending approval and returns 1."""
+        messages = [
+            self._create_approval_message("vault_read", "call-abc"),
+        ]
+        mock_letta.agents.messages.list = AsyncMock(return_value=messages)
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        result = await eidolon._cancel_pending_approvals("agent-123")
+
+        assert result == 1
+        mock_letta.agents.messages.create.assert_called_once()
+        # Verify the cancellation message format
+        call_args = mock_letta.agents.messages.create.call_args
+        assert call_args.kwargs["agent_id"] == "agent-123"
+        messages_sent = call_args.kwargs["messages"]
+        assert len(messages_sent) == 1
+        assert messages_sent[0]["type"] == "approval"
+        assert messages_sent[0]["approvals"][0]["tool_call_id"] == "call-abc"
+        assert messages_sent[0]["approvals"][0]["status"] == "error"
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_cancels_multiple_pending_approvals(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Cancels all pending approvals and returns count."""
+        messages = [
+            self._create_approval_message("tool_a", "call-1"),
+            self._create_regular_message("user_message"),
+            self._create_approval_message("tool_b", "call-2"),
+            self._create_approval_message("tool_c", "call-3"),
+        ]
+        mock_letta.agents.messages.list = AsyncMock(return_value=messages)
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        result = await eidolon._cancel_pending_approvals("agent-123")
+
+        assert result == 3
+        assert mock_letta.agents.messages.create.call_count == 3
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_skips_approval_without_tool_call(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Skips approval_request_message without tool_call attribute."""
+        msg_no_tool_call = MagicMock()
+        msg_no_tool_call.message_type = "approval_request_message"
+        msg_no_tool_call.tool_call = None
+
+        messages = [
+            msg_no_tool_call,
+            self._create_approval_message("valid_tool", "call-valid"),
+        ]
+        mock_letta.agents.messages.list = AsyncMock(return_value=messages)
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        result = await eidolon._cancel_pending_approvals("agent-123")
+
+        # Should only cancel the valid one
+        assert result == 1
+        mock_letta.agents.messages.create.assert_called_once()
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_skips_approval_without_tool_call_id(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Skips approval_request_message where tool_call has no tool_call_id."""
+        msg_no_id = MagicMock()
+        msg_no_id.message_type = "approval_request_message"
+        msg_no_id.tool_call = MagicMock()
+        msg_no_id.tool_call.name = "some_tool"
+        msg_no_id.tool_call.tool_call_id = None
+
+        messages = [
+            msg_no_id,
+            self._create_approval_message("valid_tool", "call-valid"),
+        ]
+        mock_letta.agents.messages.list = AsyncMock(return_value=messages)
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        result = await eidolon._cancel_pending_approvals("agent-123")
+
+        # Should only cancel the valid one
+        assert result == 1
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_continues_after_cancellation_failure(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Continues cancelling other approvals if one fails."""
+        messages = [
+            self._create_approval_message("tool_a", "call-1"),
+            self._create_approval_message("tool_b", "call-2"),
+            self._create_approval_message("tool_c", "call-3"),
+        ]
+        mock_letta.agents.messages.list = AsyncMock(return_value=messages)
+        # First call fails, second and third succeed
+        mock_letta.agents.messages.create = AsyncMock(
+            side_effect=[Exception("API error"), MagicMock(), MagicMock()]
+        )
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        result = await eidolon._cancel_pending_approvals("agent-123")
+
+        # Should have attempted all 3, but only 2 succeeded
+        assert result == 2
+        assert mock_letta.agents.messages.create.call_count == 3
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_returns_zero_on_list_failure(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Returns 0 when listing messages fails."""
+        mock_letta.agents.messages.list = AsyncMock(
+            side_effect=Exception("Network error")
+        )
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        result = await eidolon._cancel_pending_approvals("agent-123")
+
+        assert result == 0
+        mock_letta.agents.messages.create.assert_not_called()
+
+    @patch("agents.eidolon.client.AsyncLetta")
+    @pytest.mark.asyncio
+    async def test_uses_configured_limit(
+        self, mock_letta_class: MagicMock, mock_letta: MagicMock
+    ) -> None:
+        """Uses PENDING_APPROVAL_CHECK_LIMIT when listing messages."""
+        mock_letta.agents.messages.list = AsyncMock(return_value=[])
+        mock_letta_class.return_value = mock_letta
+
+        eidolon = EidolonMemory()
+        await eidolon._cancel_pending_approvals("agent-123")
+
+        # Verify the limit parameter was passed
+        call_args = mock_letta.agents.messages.list.call_args
+        assert call_args.kwargs["limit"] == eidolon.PENDING_APPROVAL_CHECK_LIMIT

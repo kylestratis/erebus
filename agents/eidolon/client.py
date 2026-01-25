@@ -161,6 +161,10 @@ class EidolonMemory:
             # Update agent's tools to include any new ones
             await self._sync_agent_tools(existing.id)
 
+            # Cancel any pending approvals from previous sessions
+            # This handles the case where the bot crashed during tool execution
+            await self._cancel_pending_approvals(existing.id)
+
             return existing.id
 
         # Create new agent
@@ -514,6 +518,115 @@ class EidolonMemory:
 
         except Exception as e:
             logger.warning(f"Failed to sync tools for agent {agent_id}: {e}")
+
+    # Maximum messages to check for pending approvals on startup.
+    # Letta blocks new messages when in approval state, so pending requests
+    # should be in recent history. Set conservatively to catch edge cases
+    # where multiple rapid tool calls were made before the crash.
+    PENDING_APPROVAL_CHECK_LIMIT = 50
+
+    async def _cancel_pending_approvals(self, agent_id: str) -> int:
+        """Cancel all pending tool approval requests for an agent.
+
+        This is a recovery mechanism for when the bot crashes while tools are
+        awaiting client-side approval. Letta agents enter PENDING_APPROVAL state
+        when a tool with default_requires_approval=True is called, and remain in
+        this state until an approval/rejection message is sent.
+
+        Called on startup when finding an existing agent to ensure the agent
+        isn't stuck from a previous session.
+
+        Args:
+            agent_id: The agent ID to check for pending approvals.
+
+        Returns:
+            Number of pending approvals that were cancelled (0 if none found
+            or if an error occurred).
+        """
+        logger.debug(f"Checking for pending approvals on agent {agent_id}")
+
+        try:
+            # List recent messages to check for pending approvals
+            messages = await self.client.agents.messages.list(
+                agent_id=agent_id,
+                limit=self.PENDING_APPROVAL_CHECK_LIMIT,
+            )
+
+            if not messages:
+                logger.debug(f"No messages found for agent {agent_id}")
+                return 0
+
+            # Process ALL pending approval requests, not just the first
+            cancelled_count = 0
+            for msg in messages:
+                msg_type = getattr(msg, "message_type", None)
+                if msg_type != "approval_request_message":
+                    continue
+
+                # Extract the tool call ID from the pending request
+                tool_call = getattr(msg, "tool_call", None)
+                if tool_call is None:
+                    logger.warning("Found approval_request_message without tool_call")
+                    continue
+
+                tool_call_id = getattr(tool_call, "tool_call_id", None)
+                tool_name = getattr(tool_call, "name", "unknown")
+
+                if not tool_call_id:
+                    logger.warning(f"Pending approval for {tool_name} missing tool_call_id")
+                    continue
+
+                # Cancel the pending approval by sending an error response
+                logger.warning(
+                    f"RECOVERY: Found pending approval for tool '{tool_name}' "
+                    f"(id={tool_call_id}). Cancelling due to bot restart."
+                )
+
+                try:
+                    await self.client.agents.messages.create(
+                        agent_id=agent_id,
+                        messages=[
+                            {
+                                "type": "approval",
+                                "approvals": [
+                                    {
+                                        "type": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "tool_return": (
+                                            "Tool execution was interrupted. "
+                                            "Please try your request again."
+                                        ),
+                                        "status": "error",
+                                    }
+                                ],
+                            }
+                        ],
+                    )
+                    cancelled_count += 1
+                    logger.warning(
+                        f"RECOVERY: Successfully cancelled pending approval for '{tool_name}'"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to cancel pending approval for '{tool_name}': {e}",
+                        exc_info=True,
+                    )
+
+            if cancelled_count > 0:
+                logger.warning(
+                    f"RECOVERY: Cancelled {cancelled_count} pending approval(s) for agent {agent_id}"
+                )
+            else:
+                logger.debug(f"No pending approvals found for agent {agent_id}")
+
+            return cancelled_count
+
+        except Exception as e:
+            logger.error(
+                f"Failed to check pending approvals for agent {agent_id}: {e}",
+                exc_info=True,
+            )
+            return 0
 
     async def _ensure_mcp_servers_registered(self) -> None:
         """Register MCP servers with Letta (lazy initialization).

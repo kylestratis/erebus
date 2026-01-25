@@ -10,7 +10,7 @@ description = "Set up development environment"
 run = """
 uv sync
 echo "✅ Dependencies installed"
-echo "📝 Copy .env.example to .env and fill in your credentials"
+echo "📝 Copy .env.example to .env.local and fill in your credentials for local development"
 """
 
 [tasks.test]
@@ -41,23 +41,77 @@ description = "Run Learning MCP server"
 run = "cd mcp-servers/learning && uv run python -m server"
 
 # =============================================================================
-# Deployment Tasks
+# Local Letta Server Tasks
 # =============================================================================
-# These tasks require DEPLOY_HOST and DEPLOY_USER environment variables
-# Set them in .env or export them before running:
-#   export DEPLOY_HOST=your-droplet-ip
-#   export DEPLOY_USER=deploy
+# These tasks manage the local Letta server for development.
+# They auto-detect .env.local (preferred) or .env for environment variables.
 
-[tasks.'deploy:env']
-description = "Sync .env file to production server"
+[tasks."letta:up"]
+description = "Start local Letta server (auto-detects .env.local or .env)"
 run = """
 set -euo pipefail
-[[ ! -f .env ]] && echo "❌ Error: .env file not found" && exit 1
-DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env | cut -d= -f2- | tr -d '[:space:]')
-DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env | cut -d= -f2- | tr -d '[:space:]')
-[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
-echo "📤 Syncing .env to ${DEPLOY_USER}@${DEPLOY_HOST}..."
-scp .env "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/erebus/.env"
+if [[ -f .env.local ]]; then
+  ENV_FILE=".env.local"
+elif [[ -f .env ]]; then
+  ENV_FILE=".env"
+else
+  echo "❌ Error: No .env.local or .env file found. Copy .env.example to .env.local"
+  exit 1
+fi
+echo "📂 Using env file: $ENV_FILE"
+docker compose -f docker/letta/docker-compose.yml --env-file "$ENV_FILE" up -d
+echo "✅ Letta server starting. Use 'mise run letta:logs' to watch logs."
+"""
+
+[tasks."letta:down"]
+description = "Stop local Letta server"
+run = """
+set -euo pipefail
+docker compose -f docker/letta/docker-compose.yml down
+echo "✅ Letta server stopped"
+"""
+
+[tasks."letta:logs"]
+description = "Tail local Letta server logs"
+run = "docker compose -f docker/letta/docker-compose.yml logs -f --tail=100"
+
+[tasks."letta:status"]
+description = "Show local Letta server status"
+run = "docker compose -f docker/letta/docker-compose.yml ps"
+
+[tasks."letta:restart"]
+description = "Restart local Letta server (preserves data)"
+run = """
+set -euo pipefail
+if [[ -f .env.local ]]; then
+  ENV_FILE=".env.local"
+elif [[ -f .env ]]; then
+  ENV_FILE=".env"
+else
+  echo "❌ Error: No .env.local or .env file found"
+  exit 1
+fi
+echo "📂 Using env file: $ENV_FILE"
+docker compose -f docker/letta/docker-compose.yml --env-file "$ENV_FILE" restart
+echo "✅ Letta server restarted"
+"""
+
+# =============================================================================
+# Deployment Tasks
+# =============================================================================
+# These tasks read DEPLOY_HOST and DEPLOY_USER from .env.production
+# Create .env.production with your production settings (copy from .env.example)
+
+[tasks.'deploy:env']
+description = "Sync .env.production to production server as .env"
+run = """
+set -euo pipefail
+[[ ! -f .env.production ]] && echo "❌ Error: .env.production file not found" && exit 1
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env.production | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env.production | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env.production" && exit 1
+echo "📤 Syncing .env.production to ${DEPLOY_USER}@${DEPLOY_HOST}:/opt/erebus/.env ..."
+scp .env.production "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/erebus/.env"
 echo "🔄 Restarting containers..."
 ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml up -d'
 echo "✅ Done"
@@ -67,9 +121,9 @@ echo "✅ Done"
 description = "SSH into production server"
 run = """
 set -euo pipefail
-DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env.production" && exit 1
 exec ssh "${DEPLOY_USER}@${DEPLOY_HOST}"
 """
 
@@ -77,9 +131,9 @@ exec ssh "${DEPLOY_USER}@${DEPLOY_HOST}"
 description = "Tail production logs (all containers)"
 run = """
 set -euo pipefail
-DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env.production" && exit 1
 ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml logs -f --tail=100'
 """
 
@@ -87,9 +141,9 @@ ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-
 description = "Tail Erebus bot logs only"
 run = """
 set -euo pipefail
-DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env.production" && exit 1
 ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'docker logs erebus -f --tail=100'
 """
 
@@ -97,9 +151,9 @@ ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'docker logs erebus -f --tail=100'
 description = "Show status of production containers"
 run = """
 set -euo pipefail
-DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env.production" && exit 1
 ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml ps'
 """
 
@@ -107,9 +161,9 @@ ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-
 description = "Restart all production containers"
 run = """
 set -euo pipefail
-DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
-[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env" && exit 1
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env.production" && exit 1
 echo "🔄 Restarting production containers..."
 ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml restart'
 echo "✅ Containers restarted"
