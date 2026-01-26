@@ -263,7 +263,7 @@ docker compose -f docker-compose.prod.yml ps
 docker logs erebus -f
 
 # Check Letta health (port not exposed to host, use docker exec)
-docker exec erebus-letta curl -sL http://localhost:8283/health
+docker exec erebus-letta curl -sL http://localhost:8283/v1/health
 ```
 
 Test by sending a DM to your Discord bot.
