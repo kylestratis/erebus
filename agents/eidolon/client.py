@@ -241,15 +241,17 @@ class EidolonMemory:
                 # Check if this is an MCP tool (Letta executes server-side)
                 # MCP tool names are stored when registering with Letta
                 if tool_name in self._mcp_tool_names:
-                    # Track MCP tool execution timing
+                    # MCP tools are executed by Letta server-side after we send approval.
+                    # We send an approval with a placeholder tool_return (required by API)
+                    # to tell Letta to proceed with executing the MCP tool.
+                    logger.info(f"MCP tool {tool_name} - sending approval to Letta")
                     tool_metrics = ToolCallMetrics(tool_name=tool_name)
                     if metrics:
                         metrics.tool_calls.append(tool_metrics)
 
                     try:
-                        # Approve the MCP tool call - Letta will execute it server-side
-                        # Approval with status=success tells Letta to proceed with execution
-                        logger.info(f"Approving MCP tool for server-side execution: {tool_name}")
+                        # Send approval with placeholder tool_return (API requires this field)
+                        # Letta will execute the MCP tool after receiving this approval
                         response = await self.client.agents.messages.create(
                             agent_id=agent_id,
                             messages=[
@@ -259,6 +261,7 @@ class EidolonMemory:
                                         {
                                             "type": "tool",
                                             "tool_call_id": call_id,
+                                            "tool_return": "[Approved for Letta execution]",
                                             "status": "success",
                                         }
                                     ],
@@ -267,15 +270,20 @@ class EidolonMemory:
                         )
                         tool_metrics.finish(success=True)
                         logger.info(
-                            f"MCP tool {tool_name} approved and executed "
-                            f"({tool_metrics.elapsed_ms:.0f}ms)"
+                            f"MCP tool {tool_name} approved ({tool_metrics.elapsed_ms:.0f}ms)"
                         )
                     except Exception as e:
                         tool_metrics.finish(success=False, error=str(e))
-                        logger.exception(
-                            f"MCP tool approval failed: {tool_name} ({tool_metrics.elapsed_ms:.0f}ms)"
-                        )
-                        # Send error back to agent so it can handle gracefully
+                        logger.exception(f"MCP tool approval failed: {tool_name}")
+                        # Approval failed - return error to user
+                        return f"I encountered an error while processing your request: {e}"
+
+                    iterations += 1
+                    continue
+                else:
+                    # Unknown tool - send error response so agent can handle gracefully
+                    logger.warning(f"Unknown tool {tool_name} not in registry or MCP tools")
+                    try:
                         response = await self.client.agents.messages.create(
                             agent_id=agent_id,
                             messages=[
@@ -285,37 +293,18 @@ class EidolonMemory:
                                         {
                                             "type": "tool",
                                             "tool_call_id": call_id,
-                                            "tool_return": f"MCP tool execution failed: {e}",
+                                            "tool_return": f"Tool '{tool_name}' is not available",
                                             "status": "error",
                                         }
                                     ],
                                 }
                             ],
                         )
-
-                    iterations += 1
-                    continue  # Continue loop to process next tool call or final response
-                else:
-                    # Unknown tool - send error response so agent can handle gracefully
-                    logger.warning(f"Unknown tool {tool_name} not in registry")
-                    response = await self.client.agents.messages.create(
-                        agent_id=agent_id,
-                        messages=[
-                            {
-                                "type": "approval",
-                                "approvals": [
-                                    {
-                                        "type": "tool",
-                                        "tool_call_id": call_id,
-                                        "tool_return": f"Tool '{tool_name}' is not available",
-                                        "status": "error",
-                                    }
-                                ],
-                            }
-                        ],
-                    )
-                    iterations += 1
-                    continue  # Let agent handle the error gracefully
+                        iterations += 1
+                        continue
+                    except Exception as e:
+                        logger.exception(f"Failed to send error for unknown tool: {e}")
+                        return f"I encountered an error while processing your request: {e}"
 
             # Execute native tool locally with timeout
             logger.info(f"Executing native tool: {tool_name}")
@@ -377,7 +366,10 @@ class EidolonMemory:
             iterations += 1
 
         if iterations >= self.MAX_TOOL_ITERATIONS:
-            logger.warning(f"Tool execution loop hit max iterations for user {user_id}")
+            logger.error(f"Tool execution loop hit max iterations for user {user_id}")
+            if metrics:
+                metrics.add_metadata("tool_iterations", iterations)
+            return "I hit my processing limit while working on your request. Please try again."
 
         # Record iteration count in metrics
         if metrics:
