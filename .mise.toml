@@ -168,3 +168,170 @@ echo "🔄 Restarting production containers..."
 ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml restart'
 echo "✅ Containers restarted"
 """
+
+# =============================================================================
+# Agent Reset Tasks
+# =============================================================================
+# These tasks delete the Letta agent and restart the bot to force recreation.
+# Useful when the agent is stuck or needs a fresh start with new tools.
+
+[tasks."agent:reset"]
+description = "Delete local Letta agent (forces agent recreation on next bot start)"
+run = """
+set -euo pipefail
+LETTA_URL="http://localhost:8283"
+
+echo "🔍 Finding agents in local Letta..."
+
+# Fetch agents with proper error handling (use temp file for body to handle embedded newlines)
+TMPFILE=$(mktemp)
+trap "rm -f $TMPFILE" EXIT
+
+HTTP_CODE=$(curl -sL -o "$TMPFILE" -w "%{http_code}" "${LETTA_URL}/v1/agents" 2>&1) || {
+    echo "❌ Failed to connect to Letta at ${LETTA_URL}"
+    echo "   Is Letta running? Try: mise run letta:up"
+    exit 1
+}
+
+if [[ "$HTTP_CODE" != "200" ]]; then
+    echo "❌ Letta API returned HTTP $HTTP_CODE"
+    cat "$TMPFILE"
+    exit 1
+fi
+
+# Parse agents - output JSON array for safe handling
+AGENTS=$(cat "$TMPFILE" | python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    # Output as JSON array for safe parsing
+    print(json.dumps([{'id': a['id'], 'name': a.get('name', 'unnamed')} for a in data]))
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+")
+
+AGENT_COUNT=$(echo "$AGENTS" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+if [[ "$AGENT_COUNT" -eq 0 ]]; then
+    echo "ℹ️  No agents found"
+    exit 0
+fi
+
+echo "Found $AGENT_COUNT agent(s):"
+echo "$AGENTS" | python3 -c '
+import json, sys
+for a in json.load(sys.stdin):
+    print(f"  - {a[\"name\"]} ({a[\"id\"]})")'
+
+echo ""
+if [[ "${CONFIRM_DELETE:-}" != "yes" ]]; then
+    read -p "Delete all agents? [y/N] " confirm </dev/tty || confirm="n"
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "❌ Cancelled"
+        exit 1
+    fi
+fi
+
+# Delete agents using validated UUIDs
+echo "$AGENTS" | python3 -c 'import json,sys; [print(a["id"]) for a in json.load(sys.stdin)]' | while read -r id; do
+    # Validate UUID format (basic check)
+    if [[ ! "$id" =~ ^[a-zA-Z0-9-]+$ ]]; then
+        echo "⚠️  Skipping invalid agent ID: $id"
+        continue
+    fi
+
+    echo "🗑️  Deleting agent $id..."
+    DEL_CODE=$(curl -sL -o /dev/null -w "%{http_code}" -X DELETE "${LETTA_URL}/v1/agents/${id}" 2>&1) || {
+        echo "  ❌ Network error"
+        continue
+    }
+
+    if [[ "$DEL_CODE" != "200" && "$DEL_CODE" != "204" ]]; then
+        echo "  ❌ Failed (HTTP $DEL_CODE)"
+    else
+        echo "  ✓ Deleted"
+    fi
+done
+
+echo ""
+echo "✅ Agent deletion complete."
+echo ""
+echo "To create a fresh agent, restart the bot:"
+echo "  mise run dev"
+"""
+
+[tasks."deploy:agent:reset"]
+description = "Delete production Letta agent (forces agent recreation on next erebus start)"
+run = """
+set -euo pipefail
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env.production" && exit 1
+
+echo "🔍 Finding agents in production Letta..."
+
+# Fetch agents from remote Letta (parse locally to avoid remote Python dependency)
+TMPFILE=$(mktemp)
+trap "rm -f $TMPFILE" EXIT
+
+ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL http://localhost:8283/v1/agents' > "$TMPFILE" 2>&1 || {
+    echo "❌ Failed to connect to Letta API"
+    cat "$TMPFILE"
+    exit 1
+}
+
+# Parse agents locally
+AGENTS=$(cat "$TMPFILE" | python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    print(json.dumps([{'id': a['id'], 'name': a.get('name', 'unnamed')} for a in data]))
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+")
+
+AGENT_COUNT=$(echo "$AGENTS" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+if [[ "$AGENT_COUNT" -eq 0 ]]; then
+    echo "ℹ️  No agents found"
+    exit 0
+fi
+
+echo "Found $AGENT_COUNT agent(s):"
+echo "$AGENTS" | python3 -c '
+import json, sys
+for a in json.load(sys.stdin):
+    print(f"  - {a[\"name\"]} ({a[\"id\"]})")'
+
+echo ""
+if [[ "${CONFIRM_DELETE:-}" != "yes" ]]; then
+    read -p "Delete all agents? [y/N] " confirm </dev/tty || confirm="n"
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "❌ Cancelled"
+        exit 1
+    fi
+fi
+
+# Delete agents
+echo "$AGENTS" | python3 -c 'import json,sys; [print(a["id"]) for a in json.load(sys.stdin)]' | while read -r id; do
+    echo "🗑️  Deleting agent $id..."
+    DEL_CODE=$(ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL -o /dev/null -w '%{http_code}' -X DELETE 'http://localhost:8283/v1/agents/${id}'" 2>&1) || {
+        echo "  ❌ Network error"
+        continue
+    }
+
+    if [[ "$DEL_CODE" != "200" && "$DEL_CODE" != "204" ]]; then
+        echo "  ❌ Failed (HTTP $DEL_CODE)"
+    else
+        echo "  ✓ Deleted"
+    fi
+done
+
+echo ""
+echo "✅ Agent deletion complete."
+echo ""
+echo "To create a fresh agent, restart the erebus container:"
+echo "  mise run deploy:restart"
+"""
