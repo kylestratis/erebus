@@ -16,10 +16,13 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Production stage
 FROM python:3.12-slim
 
-# Install runtime dependencies
+# Install runtime dependencies including Node.js for MCP servers
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     ca-certificates \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
