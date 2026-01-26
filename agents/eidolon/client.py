@@ -116,6 +116,7 @@ class EidolonMemory:
         # MCP server registration state
         self._mcp_server_ids: dict[str, str] = {}  # name -> server_id
         self._mcp_tool_ids: set[str] = set()  # Tool IDs from MCP servers (set for dedup)
+        self._mcp_tool_names: set[str] = set()  # Tool names from MCP servers (for approval)
         self._mcp_registered: bool = False
 
         # Async locks to prevent race conditions during lazy initialization
@@ -235,13 +236,88 @@ class EidolonMemory:
             tool_name, tool_args, call_id = tool_call
             logger.debug(f"Extracted tool call: {tool_name} (id={call_id}) args={tool_args}")
 
-            # Check if this is a native tool we handle
+            # Check if this is a native tool we handle locally
             if not self.tool_registry.can_handle(tool_name):
-                # Letta should handle this tool internally
-                logger.debug(f"Tool {tool_name} not in registry, skipping")
-                break
+                # Check if this is an MCP tool (Letta executes server-side)
+                # MCP tool names are stored when registering with Letta
+                if tool_name in self._mcp_tool_names:
+                    # Track MCP tool execution timing
+                    tool_metrics = ToolCallMetrics(tool_name=tool_name)
+                    if metrics:
+                        metrics.tool_calls.append(tool_metrics)
 
-            # Execute tool locally with timeout
+                    try:
+                        # Approve the MCP tool call - Letta will execute it server-side
+                        # Approval with status=success tells Letta to proceed with execution
+                        logger.info(f"Approving MCP tool for server-side execution: {tool_name}")
+                        response = await self.client.agents.messages.create(
+                            agent_id=agent_id,
+                            messages=[
+                                {
+                                    "type": "approval",
+                                    "approvals": [
+                                        {
+                                            "type": "tool",
+                                            "tool_call_id": call_id,
+                                            "status": "success",
+                                        }
+                                    ],
+                                }
+                            ],
+                        )
+                        tool_metrics.finish(success=True)
+                        logger.info(
+                            f"MCP tool {tool_name} approved and executed "
+                            f"({tool_metrics.elapsed_ms:.0f}ms)"
+                        )
+                    except Exception as e:
+                        tool_metrics.finish(success=False, error=str(e))
+                        logger.exception(
+                            f"MCP tool approval failed: {tool_name} ({tool_metrics.elapsed_ms:.0f}ms)"
+                        )
+                        # Send error back to agent so it can handle gracefully
+                        response = await self.client.agents.messages.create(
+                            agent_id=agent_id,
+                            messages=[
+                                {
+                                    "type": "approval",
+                                    "approvals": [
+                                        {
+                                            "type": "tool",
+                                            "tool_call_id": call_id,
+                                            "tool_return": f"MCP tool execution failed: {e}",
+                                            "status": "error",
+                                        }
+                                    ],
+                                }
+                            ],
+                        )
+
+                    iterations += 1
+                    continue  # Continue loop to process next tool call or final response
+                else:
+                    # Unknown tool - send error response so agent can handle gracefully
+                    logger.warning(f"Unknown tool {tool_name} not in registry")
+                    response = await self.client.agents.messages.create(
+                        agent_id=agent_id,
+                        messages=[
+                            {
+                                "type": "approval",
+                                "approvals": [
+                                    {
+                                        "type": "tool",
+                                        "tool_call_id": call_id,
+                                        "tool_return": f"Tool '{tool_name}' is not available",
+                                        "status": "error",
+                                    }
+                                ],
+                            }
+                        ],
+                    )
+                    iterations += 1
+                    continue  # Let agent handle the error gracefully
+
+            # Execute native tool locally with timeout
             logger.info(f"Executing native tool: {tool_name}")
             logger.debug(f"Tool arguments: {tool_args}")
 
@@ -648,8 +724,9 @@ class EidolonMemory:
                 f"Registering {len(self.config.mcp_servers)} MCP servers with Letta..."
             )
 
-            # Clear any stale IDs from previous registration attempts
+            # Clear any stale data from previous registration attempts
             self._mcp_tool_ids.clear()
+            self._mcp_tool_names.clear()
             failed_servers: list[str] = []
 
             for mcp_config in self.config.mcp_servers:
@@ -691,19 +768,33 @@ class EidolonMemory:
                         )
                         continue
 
-                    # Collect tool IDs for agent creation (set prevents duplicates)
+                    # Collect tool IDs and names for agent creation (set prevents duplicates)
                     tool_count = 0
+                    tools_without_names = 0
                     for tool in tools:
                         if not hasattr(tool, "id") or not tool.id:
                             logger.warning(
                                 f"MCP tool missing ID in {mcp_config.name}: {tool}"
                             )
                             continue
+                        tool_name = getattr(tool, "name", None)
                         self._mcp_tool_ids.add(tool.id)
-                        tool_count += 1
-                        logger.debug(
-                            f"Found MCP tool: {getattr(tool, 'name', 'unknown')} "
-                            f"({tool.id})"
+                        if tool_name:
+                            self._mcp_tool_names.add(tool_name)
+                            tool_count += 1
+                            logger.debug(
+                                f"Found MCP tool: {tool_name} ({tool.id})"
+                            )
+                        else:
+                            tools_without_names += 1
+                            logger.warning(
+                                f"MCP tool missing name in {mcp_config.name} (id={tool.id})"
+                            )
+
+                    if tools_without_names > 0:
+                        logger.warning(
+                            f"MCP server {mcp_config.name}: {tools_without_names} tools "
+                            f"missing names and cannot be called"
                         )
 
                     logger.info(
