@@ -271,7 +271,8 @@ LIMIT=50  # Check recent messages for pending approvals
 echo "🔍 Finding agents in local Letta..."
 
 TMPFILE=$(mktemp)
-trap "rm -f $TMPFILE" EXIT
+RESULTS_FILE=$(mktemp)
+trap "rm -f $TMPFILE $RESULTS_FILE" EXIT
 
 HTTP_CODE=$(curl -sL --max-time 10 -o "$TMPFILE" -w "%{http_code}" "${LETTA_URL}/v1/agents" 2>&1) || {
     echo "❌ Failed to connect to Letta at ${LETTA_URL}"
@@ -304,30 +305,23 @@ fi
 
 echo "Found $AGENT_COUNT agent(s)"
 
-# UUID regex for validation
-UUID_REGEX='^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
-
 # Process each agent
 echo "$AGENTS" | python3 -c 'import json,sys; [print(a["id"], a["name"]) for a in json.load(sys.stdin)]' | while read -r id name; do
     echo ""
     echo "📋 Checking agent: $name ($id)"
 
-    # Validate agent ID format
-    if [[ ! "$id" =~ $UUID_REGEX ]]; then
-        echo "  ⚠️  Skipping: invalid agent ID format"
-        continue
-    fi
-
     # Get recent messages
     MSG_FILE=$(mktemp)
     MSG_CODE=$(curl -sL --max-time 10 -o "$MSG_FILE" -w "%{http_code}" "${LETTA_URL}/v1/agents/${id}/messages?limit=${LIMIT}" 2>&1) || {
         echo "  ❌ Failed to get messages"
+        echo "ERROR:$name" >> "$RESULTS_FILE"
         rm -f "$MSG_FILE"
         continue
     }
 
     if [[ "$MSG_CODE" != "200" ]]; then
         echo "  ❌ Messages API returned HTTP $MSG_CODE"
+        echo "ERROR:$name" >> "$RESULTS_FILE"
         rm -f "$MSG_FILE"
         continue
     fi
@@ -353,20 +347,18 @@ print(json.dumps(pending))
 
     if [[ "$PENDING_COUNT" -eq 0 ]]; then
         echo "  ✓ No pending approvals"
+        echo "OK:$name" >> "$RESULTS_FILE"
         continue
     fi
 
     echo "  ⚠️  Found $PENDING_COUNT pending approval(s)"
 
+    # Track cancellation results for this agent
+    AGENT_SUCCESS=true
+
     # Cancel each pending approval
     echo "$RESULT" | python3 -c 'import json,sys; [print(p["id"], p["name"]) for p in json.load(sys.stdin)]' | while read -r tool_call_id tool_name; do
         echo "  🔄 Cancelling: $tool_name ($tool_call_id)"
-
-        # Validate tool_call_id format (should be UUID-like)
-        if [[ ! "$tool_call_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            echo "    ⚠️  Skipping: invalid tool_call_id format"
-            continue
-        fi
 
         # Use environment variable to safely pass tool_call_id to Python
         CANCEL_PAYLOAD=$(TOOL_CALL_ID="$tool_call_id" python3 -c "
@@ -390,6 +382,7 @@ print(json.dumps(payload))
             -H "Content-Type: application/json" \
             -d "$CANCEL_PAYLOAD" 2>&1) || {
             echo "    ❌ Network error"
+            echo "CANCEL_FAILED" >> "$RESULTS_FILE.cancel"
             continue
         }
 
@@ -397,12 +390,42 @@ print(json.dumps(payload))
             echo "    ✓ Cancelled"
         else
             echo "    ❌ Failed (HTTP $CANCEL_CODE)"
+            echo "CANCEL_FAILED" >> "$RESULTS_FILE.cancel"
         fi
     done
+
+    # Check if any cancellations failed
+    if [[ -f "$RESULTS_FILE.cancel" ]]; then
+        echo "PARTIAL:$name" >> "$RESULTS_FILE"
+        rm -f "$RESULTS_FILE.cancel"
+    else
+        echo "FIXED:$name" >> "$RESULTS_FILE"
+    fi
 done
 
+# Summary
 echo ""
-echo "✅ Done. Agent should now be responsive."
+echo "═══════════════════════════════════════"
+echo "Summary:"
+
+OK_COUNT=$(grep -c "^OK:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+FIXED_COUNT=$(grep -c "^FIXED:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+PARTIAL_COUNT=$(grep -c "^PARTIAL:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+ERROR_COUNT=$(grep -c "^ERROR:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+
+[[ "$OK_COUNT" -gt 0 ]] && echo "  ✓ $OK_COUNT agent(s) had no pending approvals"
+[[ "$FIXED_COUNT" -gt 0 ]] && echo "  ✓ $FIXED_COUNT agent(s) unstuck successfully"
+[[ "$PARTIAL_COUNT" -gt 0 ]] && echo "  ⚠️  $PARTIAL_COUNT agent(s) partially fixed (some cancellations failed)"
+[[ "$ERROR_COUNT" -gt 0 ]] && echo "  ❌ $ERROR_COUNT agent(s) had errors"
+
+if [[ "$ERROR_COUNT" -gt 0 || "$PARTIAL_COUNT" -gt 0 ]]; then
+    echo ""
+    echo "Some agents may still need attention."
+    exit 1
+else
+    echo ""
+    echo "All agents should now be responsive."
+fi
 """
 
 [tasks."deploy:agent:unstick"]
@@ -418,7 +441,8 @@ LIMIT=50  # Check recent messages for pending approvals
 echo "🔍 Finding agents in production Letta..."
 
 TMPFILE=$(mktemp)
-trap "rm -f $TMPFILE" EXIT
+RESULTS_FILE=$(mktemp)
+trap "rm -f $TMPFILE $RESULTS_FILE" EXIT
 
 ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 http://localhost:8283/v1/agents' > "$TMPFILE" 2>&1 || {
     echo "❌ Failed to connect to Letta API"
@@ -445,24 +469,16 @@ fi
 
 echo "Found $AGENT_COUNT agent(s)"
 
-# UUID regex for validation
-UUID_REGEX='^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
-
 # Process each agent
 echo "$AGENTS" | python3 -c 'import json,sys; [print(a["id"], a["name"]) for a in json.load(sys.stdin)]' | while read -r id name; do
     echo ""
     echo "📋 Checking agent: $name ($id)"
 
-    # Validate agent ID format
-    if [[ ! "$id" =~ $UUID_REGEX ]]; then
-        echo "  ⚠️  Skipping: invalid agent ID format"
-        continue
-    fi
-
     # Get recent messages via SSH
     MSG_FILE=$(mktemp)
     ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 'http://localhost:8283/v1/agents/${id}/messages?limit=${LIMIT}'" > "$MSG_FILE" 2>&1 || {
         echo "  ❌ Failed to get messages"
+        echo "ERROR:$name" >> "$RESULTS_FILE"
         rm -f "$MSG_FILE"
         continue
     }
@@ -490,6 +506,7 @@ except Exception as e:
 
     if [[ "$PENDING_COUNT" -eq 0 ]]; then
         echo "  ✓ No pending approvals"
+        echo "OK:$name" >> "$RESULTS_FILE"
         continue
     fi
 
@@ -498,12 +515,6 @@ except Exception as e:
     # Cancel each pending approval
     echo "$RESULT" | python3 -c 'import json,sys; [print(p["id"], p["name"]) for p in json.load(sys.stdin)]' | while read -r tool_call_id tool_name; do
         echo "  🔄 Cancelling: $tool_name ($tool_call_id)"
-
-        # Validate tool_call_id format (should be UUID-like or safe string)
-        if [[ ! "$tool_call_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            echo "    ⚠️  Skipping: invalid tool_call_id format"
-            continue
-        fi
 
         # Use environment variable to safely pass tool_call_id to Python
         CANCEL_PAYLOAD=$(TOOL_CALL_ID="$tool_call_id" python3 -c "
@@ -525,6 +536,7 @@ print(json.dumps(payload))
         # Pass JSON payload via stdin to avoid shell escaping issues
         CANCEL_CODE=$(echo "$CANCEL_PAYLOAD" | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 -o /dev/null -w '%{http_code}' -X POST 'http://localhost:8283/v1/agents/${id}/messages' -H 'Content-Type: application/json' -d @-" 2>&1) || {
             echo "    ❌ Network error"
+            echo "CANCEL_FAILED" >> "$RESULTS_FILE.cancel"
             continue
         }
 
@@ -532,12 +544,42 @@ print(json.dumps(payload))
             echo "    ✓ Cancelled"
         else
             echo "    ❌ Failed (HTTP $CANCEL_CODE)"
+            echo "CANCEL_FAILED" >> "$RESULTS_FILE.cancel"
         fi
     done
+
+    # Check if any cancellations failed
+    if [[ -f "$RESULTS_FILE.cancel" ]]; then
+        echo "PARTIAL:$name" >> "$RESULTS_FILE"
+        rm -f "$RESULTS_FILE.cancel"
+    else
+        echo "FIXED:$name" >> "$RESULTS_FILE"
+    fi
 done
 
+# Summary
 echo ""
-echo "✅ Done. Agent should now be responsive."
+echo "═══════════════════════════════════════"
+echo "Summary:"
+
+OK_COUNT=$(grep -c "^OK:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+FIXED_COUNT=$(grep -c "^FIXED:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+PARTIAL_COUNT=$(grep -c "^PARTIAL:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+ERROR_COUNT=$(grep -c "^ERROR:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+
+[[ "$OK_COUNT" -gt 0 ]] && echo "  ✓ $OK_COUNT agent(s) had no pending approvals"
+[[ "$FIXED_COUNT" -gt 0 ]] && echo "  ✓ $FIXED_COUNT agent(s) unstuck successfully"
+[[ "$PARTIAL_COUNT" -gt 0 ]] && echo "  ⚠️  $PARTIAL_COUNT agent(s) partially fixed (some cancellations failed)"
+[[ "$ERROR_COUNT" -gt 0 ]] && echo "  ❌ $ERROR_COUNT agent(s) had errors"
+
+if [[ "$ERROR_COUNT" -gt 0 || "$PARTIAL_COUNT" -gt 0 ]]; then
+    echo ""
+    echo "Some agents may still need attention."
+    exit 1
+else
+    echo ""
+    echo "All agents should now be responsive."
+fi
 """
 
 [tasks."deploy:agent:reset"]

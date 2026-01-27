@@ -550,20 +550,31 @@ class ErebusBot(commands.Bot):
                             f"Agent stuck in PENDING_APPROVAL state for user {message.author.id}. "
                             f"Recovering..."
                         )
-                        # Try to recover by cancelling pending approvals
-                        # NOTE: We do NOT auto-retry to avoid infinite loops if the same
-                        # message triggers the same timeout. Let the user retry manually.
+                        # Try to recover by cancelling pending approvals with a timeout.
+                        # NOTE: We do NOT auto-delete on failure to preserve agent memory.
+                        # Manual intervention via `mise run agent:unstick` is required.
                         recovery_succeeded = False
                         try:
                             agent_id = await self.eidolon.get_agent_id(message.author.id)
                             if agent_id:
-                                cancelled = await self.eidolon._cancel_pending_approvals(agent_id)
+                                logger.debug(f"Attempting to cancel pending approvals for {agent_id}")
+                                # Use a short timeout - Letta client may retry indefinitely
+                                cancelled = await asyncio.wait_for(
+                                    self.eidolon._cancel_pending_approvals(agent_id),
+                                    timeout=15.0,
+                                )
                                 if cancelled:
                                     logger.info(
                                         f"RECOVERY: Cancelled {cancelled} pending approval(s) "
                                         f"for user {message.author.id}"
                                     )
                                     recovery_succeeded = True
+                                else:
+                                    # No pending approvals found but agent is stuck
+                                    logger.warning(
+                                        f"No pending approvals found for {agent_id} but agent "
+                                        f"is stuck. Manual intervention required."
+                                    )
                             else:
                                 # This should never happen - we got PENDING_APPROVAL
                                 # but no agent exists
@@ -571,9 +582,22 @@ class ErebusBot(commands.Bot):
                                     f"CRITICAL: PENDING_APPROVAL error for user {message.author.id} "
                                     f"but agent does not exist. State inconsistency detected."
                                 )
+                        except TimeoutError:
+                            logger.warning(
+                                f"RECOVERY: Timed out cancelling pending approvals for "
+                                f"user {message.author.id}. Manual intervention required."
+                            )
                         except (RateLimitError, ModelError, ConflictError) as recover_err:
                             # Include ConflictError to prevent recursion
-                            logger.exception(f"Failed to recover from PENDING_APPROVAL: {recover_err}")
+                            logger.warning(
+                                f"RECOVERY: Failed to cancel pending approvals: {recover_err}. "
+                                f"Manual intervention required."
+                            )
+                        except Exception as recover_err:
+                            logger.exception(
+                                f"RECOVERY: Unexpected error cancelling approvals: {recover_err}. "
+                                f"Manual intervention required."
+                            )
 
                         if recovery_succeeded:
                             await message.channel.send(
@@ -582,8 +606,8 @@ class ErebusBot(commands.Bot):
                             )
                         else:
                             await message.channel.send(
-                                "I'm having trouble processing your request. "
-                                "Please wait a moment and try again."
+                                "I'm stuck and need manual intervention. "
+                                "Please contact an admin to run `mise run agent:unstick`."
                             )
                     else:
                         logger.exception(f"Conflict error handling message: {e}")

@@ -420,6 +420,24 @@ class EidolonMemory:
         logger.info(f"Deleted agent for user {user_id}")
         return True
 
+    async def delete_agent_by_id(self, user_id: int, agent_id: str) -> bool:
+        """Delete an agent by its ID directly.
+
+        Use this when you already have the agent_id and want to avoid
+        additional API calls that might hang or fail.
+
+        Args:
+            user_id: Discord user ID (for cache cleanup).
+            agent_id: The agent ID to delete.
+
+        Returns:
+            True if deletion succeeded.
+        """
+        await self.client.agents.delete(agent_id=agent_id)
+        self._agent_cache.pop(user_id, None)
+        logger.info(f"Deleted agent {agent_id} for user {user_id}")
+        return True
+
     async def _find_agent_by_name(self, name: str) -> AgentState | None:
         """Find an agent by name.
 
