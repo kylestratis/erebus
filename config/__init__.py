@@ -197,7 +197,7 @@ class SchedulerJobsConfig:
 
     daily_note: JobConfig = field(default_factory=lambda: JobConfig(cron="0 6 * * *"))
     end_of_day_sync: JobConfig = field(default_factory=lambda: JobConfig(cron="55 23 * * *"))
-    weekly_review: JobConfig = field(default_factory=lambda: JobConfig(cron="0 18 * * 0"))
+    weekly_review: JobConfig = field(default_factory=lambda: JobConfig(cron="0 18 * * sun"))
     erebus_journal: JobConfig = field(default_factory=lambda: JobConfig(cron="58 23 * * *"))
 
 
@@ -300,7 +300,7 @@ class ErebusConfig(BaseSettings):
     job_end_of_day_sync_enabled: bool = True
     job_end_of_day_sync_cron: str = "55 23 * * *"
     job_weekly_review_enabled: bool = True
-    job_weekly_review_cron: str = "0 18 * * 0"
+    job_weekly_review_cron: str = "0 18 * * sun"
     job_erebus_journal_enabled: bool = True
     job_erebus_journal_cron: str = "58 23 * * *"
 

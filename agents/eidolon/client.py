@@ -921,31 +921,54 @@ class EidolonMemory:
         return sanitized
 
     def _extract_function_call(self, response: Any) -> tuple[str, dict[str, Any], str] | None:
-        """Extract function call from Letta response if present.
+        """Extract the most recent PENDING function call from Letta response.
 
         Looks for both approval_request_message (for client-side tools with
         default_requires_approval=True) and tool_call_message (for server-side tools).
+
+        IMPORTANT: After an MCP tool executes, Letta returns a response containing
+        both historical tool calls AND any new pending tool call. We must:
+        1. Filter out already-resolved tool calls (those with tool_return_message)
+        2. Find the most recent pending tool call (iterate in reverse order)
 
         Args:
             response: Letta API response.
 
         Returns:
-            Tuple of (tool_name, arguments, call_id) if a function call
-            is present, None otherwise.
+            Tuple of (tool_name, arguments, call_id) for the most recent pending
+            function call, or None if no pending calls exist.
         """
-        if not hasattr(response, "messages"):
-            logger.debug("Response has no 'messages' attribute")
+        if not hasattr(response, "messages") or response.messages is None:
+            logger.debug("Response has no messages")
             return None
 
-        logger.debug(f"Response has {len(response.messages)} messages")
-        for i, msg in enumerate(response.messages):
+        messages = response.messages
+        logger.debug(f"Response has {len(messages)} messages")
+
+        # First pass: collect all resolved tool_call_ids from tool_return_message
+        # These are tool calls that have already been executed and returned
+        resolved_call_ids: set[str] = set()
+        for msg in messages:
             msg_type = getattr(msg, "message_type", None) or type(msg).__name__
-            logger.debug(f"  Message {i}: type={msg_type}, class={type(msg).__name__}")
+            if msg_type == "tool_return_message":
+                tool_call = getattr(msg, "tool_call", None)
+                if tool_call:
+                    call_id = getattr(tool_call, "tool_call_id", None)
+                    if call_id:
+                        resolved_call_ids.add(call_id)
+
+        if resolved_call_ids:
+            logger.debug(f"Found {len(resolved_call_ids)} resolved tool calls")
+
+        # Second pass: iterate in reverse to find the MOST RECENT PENDING tool call
+        for i in range(len(messages) - 1, -1, -1):
+            msg = messages[i]
+            msg_type = getattr(msg, "message_type", None) or type(msg).__name__
+            logger.debug(f"  Message {i}: type={msg_type}")
 
             # Check for client-side tools (approval_request_message) and
             # server-side tools (tool_call_message)
             if msg_type in ("approval_request_message", "tool_call_message"):
-                # Both message types have a tool_call attribute with the call details
                 tool_call = getattr(msg, "tool_call", None)
                 if tool_call is None:
                     logger.debug(f"  Message {i} has no tool_call attribute")
@@ -955,8 +978,6 @@ class EidolonMemory:
                 args = getattr(tool_call, "arguments", "{}")
                 call_id = getattr(tool_call, "tool_call_id", None)
 
-                logger.debug(f"  Found tool call: name={name}, call_id={call_id}")
-
                 # Validate required fields
                 if not name:
                     logger.warning(f"  Tool call missing name in message {i}")
@@ -964,6 +985,13 @@ class EidolonMemory:
                 if not call_id:
                     logger.warning(f"  Tool call {name} missing tool_call_id in message {i}")
                     continue
+
+                # Skip already-resolved tool calls
+                if call_id in resolved_call_ids:
+                    logger.debug(f"  Skipping resolved tool call: {name} ({call_id})")
+                    continue
+
+                logger.debug(f"  Found pending tool call: {name} ({call_id})")
 
                 # Parse arguments (stored as JSON string)
                 if isinstance(args, str):

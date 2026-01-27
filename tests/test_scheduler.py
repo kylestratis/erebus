@@ -437,7 +437,7 @@ class TestWeeklyReviewJob:
 
         job = WeeklyReviewJob()
         assert job.name == "weekly_review"
-        assert job.cron == "0 18 * * 0"  # Sunday 6pm
+        assert job.cron == "0 18 * * sun"  # Sunday 6pm (APScheduler format)
         assert job.enabled is True
 
     async def test_skips_without_discord_user(self) -> None:

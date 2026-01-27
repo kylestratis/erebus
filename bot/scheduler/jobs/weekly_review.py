@@ -56,7 +56,7 @@ class WeeklyReviewJob(ScheduledJob):
 
     name = "weekly_review"
     description = "Send weekly review reminder"
-    cron = "0 18 * * 0"  # Default: Sunday 6:00 PM
+    cron = "0 18 * * sun"  # Default: Sunday 6:00 PM (APScheduler format)
 
     async def run(self) -> JobResult:
         """Send the weekly review reminder."""
