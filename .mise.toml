@@ -261,6 +261,285 @@ echo "To create a fresh agent, restart the bot:"
 echo "  mise run dev"
 """
 
+[tasks."agent:unstick"]
+description = "Cancel pending approvals to unstick agent without deleting (preserves memory)"
+run = """
+set -euo pipefail
+LETTA_URL="http://localhost:8283"
+LIMIT=50  # Check recent messages for pending approvals
+
+echo "🔍 Finding agents in local Letta..."
+
+TMPFILE=$(mktemp)
+trap "rm -f $TMPFILE" EXIT
+
+HTTP_CODE=$(curl -sL --max-time 10 -o "$TMPFILE" -w "%{http_code}" "${LETTA_URL}/v1/agents" 2>&1) || {
+    echo "❌ Failed to connect to Letta at ${LETTA_URL}"
+    echo "   Is Letta running? Try: mise run letta:up"
+    exit 1
+}
+
+if [[ "$HTTP_CODE" != "200" ]]; then
+    echo "❌ Letta API returned HTTP $HTTP_CODE"
+    cat "$TMPFILE"
+    exit 1
+fi
+
+AGENTS=$(cat "$TMPFILE" | python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    print(json.dumps([{'id': a['id'], 'name': a.get('name', 'unnamed')} for a in data]))
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+")
+
+AGENT_COUNT=$(echo "$AGENTS" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+if [[ "$AGENT_COUNT" -eq 0 ]]; then
+    echo "ℹ️  No agents found"
+    exit 0
+fi
+
+echo "Found $AGENT_COUNT agent(s)"
+
+# UUID regex for validation
+UUID_REGEX='^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+
+# Process each agent
+echo "$AGENTS" | python3 -c 'import json,sys; [print(a["id"], a["name"]) for a in json.load(sys.stdin)]' | while read -r id name; do
+    echo ""
+    echo "📋 Checking agent: $name ($id)"
+
+    # Validate agent ID format
+    if [[ ! "$id" =~ $UUID_REGEX ]]; then
+        echo "  ⚠️  Skipping: invalid agent ID format"
+        continue
+    fi
+
+    # Get recent messages
+    MSG_FILE=$(mktemp)
+    MSG_CODE=$(curl -sL --max-time 10 -o "$MSG_FILE" -w "%{http_code}" "${LETTA_URL}/v1/agents/${id}/messages?limit=${LIMIT}" 2>&1) || {
+        echo "  ❌ Failed to get messages"
+        rm -f "$MSG_FILE"
+        continue
+    }
+
+    if [[ "$MSG_CODE" != "200" ]]; then
+        echo "  ❌ Messages API returned HTTP $MSG_CODE"
+        rm -f "$MSG_FILE"
+        continue
+    fi
+
+    # Find and cancel pending approvals
+    RESULT=$(cat "$MSG_FILE" | python3 -c "
+import json, sys
+
+data = json.loads(sys.stdin.read())
+pending = []
+for msg in data:
+    if msg.get('message_type') == 'approval_request_message':
+        tool_call = msg.get('tool_call', {})
+        tool_call_id = tool_call.get('tool_call_id')
+        tool_name = tool_call.get('name', 'unknown')
+        if tool_call_id:
+            pending.append({'id': tool_call_id, 'name': tool_name})
+print(json.dumps(pending))
+")
+    rm -f "$MSG_FILE"
+
+    PENDING_COUNT=$(echo "$RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+    if [[ "$PENDING_COUNT" -eq 0 ]]; then
+        echo "  ✓ No pending approvals"
+        continue
+    fi
+
+    echo "  ⚠️  Found $PENDING_COUNT pending approval(s)"
+
+    # Cancel each pending approval
+    echo "$RESULT" | python3 -c 'import json,sys; [print(p["id"], p["name"]) for p in json.load(sys.stdin)]' | while read -r tool_call_id tool_name; do
+        echo "  🔄 Cancelling: $tool_name ($tool_call_id)"
+
+        # Validate tool_call_id format (should be UUID-like)
+        if [[ ! "$tool_call_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            echo "    ⚠️  Skipping: invalid tool_call_id format"
+            continue
+        fi
+
+        # Use environment variable to safely pass tool_call_id to Python
+        CANCEL_PAYLOAD=$(TOOL_CALL_ID="$tool_call_id" python3 -c "
+import json, os
+payload = {
+    'messages': [{
+        'type': 'approval',
+        'approvals': [{
+            'type': 'tool',
+            'tool_call_id': os.environ['TOOL_CALL_ID'],
+            'tool_return': 'Tool execution was interrupted. Please try your request again.',
+            'status': 'error'
+        }]
+    }]
+}
+print(json.dumps(payload))
+")
+
+        CANCEL_CODE=$(curl -sL --max-time 10 -o /dev/null -w "%{http_code}" \
+            -X POST "${LETTA_URL}/v1/agents/${id}/messages" \
+            -H "Content-Type: application/json" \
+            -d "$CANCEL_PAYLOAD" 2>&1) || {
+            echo "    ❌ Network error"
+            continue
+        }
+
+        if [[ "$CANCEL_CODE" == "200" || "$CANCEL_CODE" == "201" ]]; then
+            echo "    ✓ Cancelled"
+        else
+            echo "    ❌ Failed (HTTP $CANCEL_CODE)"
+        fi
+    done
+done
+
+echo ""
+echo "✅ Done. Agent should now be responsive."
+"""
+
+[tasks."deploy:agent:unstick"]
+description = "Cancel pending approvals on production agent (preserves memory)"
+run = """
+set -euo pipefail
+DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+DEPLOY_USER=$(grep -E '^DEPLOY_USER=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')
+[[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" ]] && echo "❌ Error: DEPLOY_HOST and DEPLOY_USER must be set in .env.production" && exit 1
+
+LIMIT=50  # Check recent messages for pending approvals
+
+echo "🔍 Finding agents in production Letta..."
+
+TMPFILE=$(mktemp)
+trap "rm -f $TMPFILE" EXIT
+
+ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 http://localhost:8283/v1/agents' > "$TMPFILE" 2>&1 || {
+    echo "❌ Failed to connect to Letta API"
+    cat "$TMPFILE"
+    exit 1
+}
+
+AGENTS=$(cat "$TMPFILE" | python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    print(json.dumps([{'id': a['id'], 'name': a.get('name', 'unnamed')} for a in data]))
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+")
+
+AGENT_COUNT=$(echo "$AGENTS" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+if [[ "$AGENT_COUNT" -eq 0 ]]; then
+    echo "ℹ️  No agents found"
+    exit 0
+fi
+
+echo "Found $AGENT_COUNT agent(s)"
+
+# UUID regex for validation
+UUID_REGEX='^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+
+# Process each agent
+echo "$AGENTS" | python3 -c 'import json,sys; [print(a["id"], a["name"]) for a in json.load(sys.stdin)]' | while read -r id name; do
+    echo ""
+    echo "📋 Checking agent: $name ($id)"
+
+    # Validate agent ID format
+    if [[ ! "$id" =~ $UUID_REGEX ]]; then
+        echo "  ⚠️  Skipping: invalid agent ID format"
+        continue
+    fi
+
+    # Get recent messages via SSH
+    MSG_FILE=$(mktemp)
+    ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 'http://localhost:8283/v1/agents/${id}/messages?limit=${LIMIT}'" > "$MSG_FILE" 2>&1 || {
+        echo "  ❌ Failed to get messages"
+        rm -f "$MSG_FILE"
+        continue
+    }
+
+    # Find pending approvals
+    RESULT=$(cat "$MSG_FILE" | python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    pending = []
+    for msg in data:
+        if msg.get('message_type') == 'approval_request_message':
+            tool_call = msg.get('tool_call', {})
+            tool_call_id = tool_call.get('tool_call_id')
+            tool_name = tool_call.get('name', 'unknown')
+            if tool_call_id:
+                pending.append({'id': tool_call_id, 'name': tool_name})
+    print(json.dumps(pending))
+except Exception as e:
+    print('[]')
+")
+    rm -f "$MSG_FILE"
+
+    PENDING_COUNT=$(echo "$RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+    if [[ "$PENDING_COUNT" -eq 0 ]]; then
+        echo "  ✓ No pending approvals"
+        continue
+    fi
+
+    echo "  ⚠️  Found $PENDING_COUNT pending approval(s)"
+
+    # Cancel each pending approval
+    echo "$RESULT" | python3 -c 'import json,sys; [print(p["id"], p["name"]) for p in json.load(sys.stdin)]' | while read -r tool_call_id tool_name; do
+        echo "  🔄 Cancelling: $tool_name ($tool_call_id)"
+
+        # Validate tool_call_id format (should be UUID-like or safe string)
+        if [[ ! "$tool_call_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            echo "    ⚠️  Skipping: invalid tool_call_id format"
+            continue
+        fi
+
+        # Use environment variable to safely pass tool_call_id to Python
+        CANCEL_PAYLOAD=$(TOOL_CALL_ID="$tool_call_id" python3 -c "
+import json, os
+payload = {
+    'messages': [{
+        'type': 'approval',
+        'approvals': [{
+            'type': 'tool',
+            'tool_call_id': os.environ['TOOL_CALL_ID'],
+            'tool_return': 'Tool execution was interrupted. Please try your request again.',
+            'status': 'error'
+        }]
+    }]
+}
+print(json.dumps(payload))
+")
+
+        # Pass JSON payload via stdin to avoid shell escaping issues
+        CANCEL_CODE=$(echo "$CANCEL_PAYLOAD" | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 -o /dev/null -w '%{http_code}' -X POST 'http://localhost:8283/v1/agents/${id}/messages' -H 'Content-Type: application/json' -d @-" 2>&1) || {
+            echo "    ❌ Network error"
+            continue
+        }
+
+        if [[ "$CANCEL_CODE" == "200" || "$CANCEL_CODE" == "201" ]]; then
+            echo "    ✓ Cancelled"
+        else
+            echo "    ❌ Failed (HTTP $CANCEL_CODE)"
+        fi
+    done
+done
+
+echo ""
+echo "✅ Done. Agent should now be responsive."
+"""
+
 [tasks."deploy:agent:reset"]
 description = "Delete production Letta agent (forces agent recreation on next erebus start)"
 run = """
