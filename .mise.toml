@@ -326,42 +326,39 @@ echo "$AGENTS" | python3 -c 'import json,sys; [print(a["id"], a["name"]) for a i
         continue
     fi
 
-    # Find and cancel pending approvals
+    # Find the most recent approval_request_message (Letta only allows one pending at a time)
     RESULT=$(cat "$MSG_FILE" | python3 -c "
 import json, sys
-
-data = json.loads(sys.stdin.read())
-pending = []
-for msg in data:
-    if msg.get('message_type') == 'approval_request_message':
-        tool_call = msg.get('tool_call', {})
-        tool_call_id = tool_call.get('tool_call_id')
-        tool_name = tool_call.get('name', 'unknown')
-        if tool_call_id:
-            pending.append({'id': tool_call_id, 'name': tool_name})
-print(json.dumps(pending))
+try:
+    data = json.loads(sys.stdin.read())
+    # Messages are returned newest-first, so first approval_request is the most recent
+    for msg in data:
+        if msg.get('message_type') == 'approval_request_message':
+            tool_call = msg.get('tool_call', {})
+            tool_call_id = tool_call.get('tool_call_id')
+            tool_name = tool_call.get('name', 'unknown')
+            if tool_call_id:
+                print(json.dumps({'id': tool_call_id, 'name': tool_name}))
+                sys.exit(0)
+    print('null')
+except Exception as e:
+    print('null')
 ")
     rm -f "$MSG_FILE"
 
-    PENDING_COUNT=$(echo "$RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
-
-    if [[ "$PENDING_COUNT" -eq 0 ]]; then
-        echo "  ✓ No pending approvals"
+    if [[ "$RESULT" == "null" ]]; then
+        echo "  ✓ No approval requests in history"
         echo "OK:$name" >> "$RESULTS_FILE"
         continue
     fi
 
-    echo "  ⚠️  Found $PENDING_COUNT pending approval(s)"
+    tool_call_id=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+    tool_name=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['name'])")
 
-    # Track cancellation results for this agent using temp files
-    rm -f "$RESULTS_FILE.success" "$RESULTS_FILE.fail"
+    echo "  🔄 Attempting to cancel: $tool_name ($tool_call_id)"
 
-    # Cancel each pending approval
-    echo "$RESULT" | python3 -c 'import json,sys; [print(p["id"], p["name"]) for p in json.load(sys.stdin)]' | while read -r tool_call_id tool_name; do
-        echo "  🔄 Cancelling: $tool_name ($tool_call_id)"
-
-        # Use environment variable to safely pass tool_call_id to Python
-        CANCEL_PAYLOAD=$(TOOL_CALL_ID="$tool_call_id" python3 -c "
+    # Build cancellation payload
+    CANCEL_PAYLOAD=$(TOOL_CALL_ID="$tool_call_id" python3 -c "
 import json, os
 payload = {
     'messages': [{
@@ -377,40 +374,30 @@ payload = {
 print(json.dumps(payload))
 ")
 
-        RESP_FILE=$(mktemp)
-        CANCEL_CODE=$(curl -sL --max-time 10 -o "$RESP_FILE" -w "%{http_code}" \
-            -X POST "${LETTA_URL}/v1/agents/${id}/messages" \
-            -H "Content-Type: application/json" \
-            -d "$CANCEL_PAYLOAD" 2>&1) || {
-            echo "    ❌ Network error"
-            echo "1" >> "$RESULTS_FILE.fail"
-            rm -f "$RESP_FILE"
-            continue
-        }
-
-        if [[ "$CANCEL_CODE" == "200" || "$CANCEL_CODE" == "201" ]]; then
-            echo "    ✓ Cancelled"
-            echo "1" >> "$RESULTS_FILE.success"
-        else
-            # Extract and show error message from response
-            ERR_MSG=$(cat "$RESP_FILE" 2>/dev/null | head -c 500)
-            echo "    ❌ Failed (HTTP $CANCEL_CODE): $ERR_MSG"
-            echo "1" >> "$RESULTS_FILE.fail"
-        fi
-        rm -f "$RESP_FILE"
-    done
-
-    # Determine agent status based on success/fail counts
-    SUCCESS_COUNT=$(wc -l < "$RESULTS_FILE.success" 2>/dev/null | tr -d ' ') || SUCCESS_COUNT=0
-    FAIL_COUNT=$(wc -l < "$RESULTS_FILE.fail" 2>/dev/null | tr -d ' ') || FAIL_COUNT=0
-    rm -f "$RESULTS_FILE.success" "$RESULTS_FILE.fail"
-
-    if [[ "$FAIL_COUNT" -eq 0 ]]; then
-        echo "FIXED:$name" >> "$RESULTS_FILE"
-    elif [[ "$SUCCESS_COUNT" -eq 0 ]]; then
+    RESP_FILE=$(mktemp)
+    CANCEL_CODE=$(curl -sL --max-time 10 -o "$RESP_FILE" -w "%{http_code}" \
+        -X POST "${LETTA_URL}/v1/agents/${id}/messages" \
+        -H "Content-Type: application/json" \
+        -d "$CANCEL_PAYLOAD" 2>&1) || {
+        echo "    ❌ Network error"
         echo "ERROR:$name" >> "$RESULTS_FILE"
+        rm -f "$RESP_FILE"
+        continue
+    }
+
+    RESP_BODY=$(cat "$RESP_FILE" 2>/dev/null)
+    rm -f "$RESP_FILE"
+
+    if [[ "$CANCEL_CODE" == "200" || "$CANCEL_CODE" == "201" ]]; then
+        echo "    ✓ Cancelled pending approval"
+        echo "FIXED:$name" >> "$RESULTS_FILE"
+    elif echo "$RESP_BODY" | grep -q "No tool call is currently awaiting approval"; then
+        # The agent isn't actually stuck - all approval requests in history are already resolved
+        echo "    ✓ Agent is not stuck (no pending approvals)"
+        echo "OK:$name" >> "$RESULTS_FILE"
     else
-        echo "PARTIAL:$name" >> "$RESULTS_FILE"
+        echo "    ❌ Failed (HTTP $CANCEL_CODE): $(echo "$RESP_BODY" | head -c 500)"
+        echo "ERROR:$name" >> "$RESULTS_FILE"
     fi
 done
 
@@ -494,44 +481,39 @@ echo "$AGENTS" | python3 -c 'import json,sys; [print(a["id"], a["name"]) for a i
         continue
     }
 
-    # Find pending approvals
+    # Find the most recent approval_request_message (Letta only allows one pending at a time)
     RESULT=$(cat "$MSG_FILE" | python3 -c "
 import json, sys
 try:
     data = json.loads(sys.stdin.read())
-    pending = []
+    # Messages are returned newest-first, so first approval_request is the most recent
     for msg in data:
         if msg.get('message_type') == 'approval_request_message':
             tool_call = msg.get('tool_call', {})
             tool_call_id = tool_call.get('tool_call_id')
             tool_name = tool_call.get('name', 'unknown')
             if tool_call_id:
-                pending.append({'id': tool_call_id, 'name': tool_name})
-    print(json.dumps(pending))
+                print(json.dumps({'id': tool_call_id, 'name': tool_name}))
+                sys.exit(0)
+    print('null')
 except Exception as e:
-    print('[]')
+    print('null')
 ")
     rm -f "$MSG_FILE"
 
-    PENDING_COUNT=$(echo "$RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
-
-    if [[ "$PENDING_COUNT" -eq 0 ]]; then
-        echo "  ✓ No pending approvals"
+    if [[ "$RESULT" == "null" ]]; then
+        echo "  ✓ No approval requests in history"
         echo "OK:$name" >> "$RESULTS_FILE"
         continue
     fi
 
-    echo "  ⚠️  Found $PENDING_COUNT pending approval(s)"
+    tool_call_id=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+    tool_name=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['name'])")
 
-    # Track cancellation results for this agent using temp files
-    rm -f "$RESULTS_FILE.success" "$RESULTS_FILE.fail"
+    echo "  🔄 Attempting to cancel: $tool_name ($tool_call_id)"
 
-    # Cancel each pending approval
-    echo "$RESULT" | python3 -c 'import json,sys; [print(p["id"], p["name"]) for p in json.load(sys.stdin)]' | while read -r tool_call_id tool_name; do
-        echo "  🔄 Cancelling: $tool_name ($tool_call_id)"
-
-        # Use environment variable to safely pass tool_call_id to Python
-        CANCEL_PAYLOAD=$(TOOL_CALL_ID="$tool_call_id" python3 -c "
+    # Build cancellation payload
+    CANCEL_PAYLOAD=$(TOOL_CALL_ID="$tool_call_id" python3 -c "
 import json, os
 payload = {
     'messages': [{
@@ -547,38 +529,35 @@ payload = {
 print(json.dumps(payload))
 ")
 
-        # Pass JSON payload via stdin, capture response
-        RESP_FILE=$(mktemp)
-        CANCEL_CODE=$(echo "$CANCEL_PAYLOAD" | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 -w '%{http_code}' -X POST 'http://localhost:8283/v1/agents/${id}/messages' -H 'Content-Type: application/json' -d @-" > "$RESP_FILE" 2>&1; tail -c 3 "$RESP_FILE") || {
-            echo "    ❌ Network error"
-            echo "1" >> "$RESULTS_FILE.fail"
-            rm -f "$RESP_FILE"
-            continue
-        }
-
-        if [[ "$CANCEL_CODE" == "200" || "$CANCEL_CODE" == "201" ]]; then
-            echo "    ✓ Cancelled"
-            echo "1" >> "$RESULTS_FILE.success"
-        else
-            # Show error from response (everything except last 3 chars which is the HTTP code)
-            ERR_MSG=$(head -c -3 "$RESP_FILE" 2>/dev/null | head -c 500)
-            echo "    ❌ Failed (HTTP $CANCEL_CODE): $ERR_MSG"
-            echo "1" >> "$RESULTS_FILE.fail"
-        fi
-        rm -f "$RESP_FILE"
-    done
-
-    # Determine agent status based on success/fail counts
-    SUCCESS_COUNT=$(wc -l < "$RESULTS_FILE.success" 2>/dev/null | tr -d ' ') || SUCCESS_COUNT=0
-    FAIL_COUNT=$(wc -l < "$RESULTS_FILE.fail" 2>/dev/null | tr -d ' ') || FAIL_COUNT=0
-    rm -f "$RESULTS_FILE.success" "$RESULTS_FILE.fail"
-
-    if [[ "$FAIL_COUNT" -eq 0 ]]; then
-        echo "FIXED:$name" >> "$RESULTS_FILE"
-    elif [[ "$SUCCESS_COUNT" -eq 0 ]]; then
+    # Pass JSON payload via stdin, capture response
+    RESP_FILE=$(mktemp)
+    CANCEL_CODE=$(echo "$CANCEL_PAYLOAD" | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 -w '%{http_code}' -X POST 'http://localhost:8283/v1/agents/${id}/messages' -H 'Content-Type: application/json' -d @-" > "$RESP_FILE" 2>&1; tail -c 3 "$RESP_FILE") || {
+        echo "    ❌ Network error"
         echo "ERROR:$name" >> "$RESULTS_FILE"
+        rm -f "$RESP_FILE"
+        continue
+    }
+
+    # Get response body (everything except last 3 chars which is the HTTP code)
+    FILE_SIZE=$(wc -c < "$RESP_FILE" 2>/dev/null | tr -d ' ') || FILE_SIZE=0
+    BODY_SIZE=$((FILE_SIZE - 3))
+    if [[ $BODY_SIZE -gt 0 ]]; then
+        RESP_BODY=$(head -c "$BODY_SIZE" "$RESP_FILE" 2>/dev/null)
     else
-        echo "PARTIAL:$name" >> "$RESULTS_FILE"
+        RESP_BODY=""
+    fi
+    rm -f "$RESP_FILE"
+
+    if [[ "$CANCEL_CODE" == "200" || "$CANCEL_CODE" == "201" ]]; then
+        echo "    ✓ Cancelled pending approval"
+        echo "FIXED:$name" >> "$RESULTS_FILE"
+    elif echo "$RESP_BODY" | grep -q "No tool call is currently awaiting approval"; then
+        # The agent isn't actually stuck - all approval requests in history are already resolved
+        echo "    ✓ Agent is not stuck (no pending approvals)"
+        echo "OK:$name" >> "$RESULTS_FILE"
+    else
+        echo "    ❌ Failed (HTTP $CANCEL_CODE): $(echo "$RESP_BODY" | head -c 500)"
+        echo "ERROR:$name" >> "$RESULTS_FILE"
     fi
 done
 
