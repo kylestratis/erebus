@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 import discord
 from discord.ext import commands
+from letta_client import ConflictError
 
 from agents import (
     MCPClientManager,
@@ -48,7 +49,9 @@ logger = logging.getLogger(__name__)
 DISCORD_MESSAGE_MAX_LENGTH = 2000
 
 # Timeout for model API requests (seconds)
-MODEL_REQUEST_TIMEOUT = 60.0
+# This covers the entire chat() call including multiple tool executions.
+# Increased from 60s to handle multi-tool workflows (e.g., /weekly, /daily).
+MODEL_REQUEST_TIMEOUT = 180.0
 
 
 class ErebusBot(commands.Bot):
@@ -490,6 +493,24 @@ class ErebusBot(commands.Bot):
 
                 except TimeoutError:
                     logger.error(f"Model request timed out for user {message.author.id}")
+                    # Try to cancel any pending approvals left by the timeout.
+                    # This is best-effort cleanup - if it fails, the PENDING_APPROVAL
+                    # handler will catch it on the next message.
+                    try:
+                        agent_id = await self.eidolon.get_agent_id(message.author.id)
+                        if agent_id:
+                            cancelled = await self.eidolon._cancel_pending_approvals(agent_id)
+                            if cancelled:
+                                logger.info(
+                                    f"Cancelled {cancelled} pending approval(s) after timeout"
+                                )
+                    except (RateLimitError, ModelError, ConflictError) as cancel_err:
+                        # Known errors - log and continue. Include ConflictError to
+                        # prevent it from propagating to the outer handler.
+                        logger.warning(f"Failed to cancel pending approvals: {cancel_err}")
+                    except Exception as cancel_err:
+                        # Unexpected error - log with traceback but don't propagate
+                        logger.exception(f"Unexpected error cancelling pending approvals: {cancel_err}")
                     await message.channel.send(
                         "The request took too long to process. Please try again."
                     )
@@ -509,6 +530,67 @@ class ErebusBot(commands.Bot):
                     await message.channel.send(
                         "I encountered an error while thinking. Please try again."
                     )
+
+                except ConflictError as e:
+                    # Handle PENDING_APPROVAL state - agent is stuck waiting for approval
+                    # This happens if a previous request timed out mid-tool-execution
+                    #
+                    # Parse error body safely - can be dict, string, or None
+                    error_code = ""
+                    error_body = getattr(e, "body", None)
+                    if isinstance(error_body, dict):
+                        detail = error_body.get("detail")
+                        if isinstance(detail, dict):
+                            error_code = detail.get("code", "")
+                        elif isinstance(detail, str) and "PENDING_APPROVAL" in detail:
+                            error_code = "PENDING_APPROVAL"
+
+                    if error_code == "PENDING_APPROVAL":
+                        logger.warning(
+                            f"Agent stuck in PENDING_APPROVAL state for user {message.author.id}. "
+                            f"Recovering..."
+                        )
+                        # Try to recover by cancelling pending approvals
+                        # NOTE: We do NOT auto-retry to avoid infinite loops if the same
+                        # message triggers the same timeout. Let the user retry manually.
+                        recovery_succeeded = False
+                        try:
+                            agent_id = await self.eidolon.get_agent_id(message.author.id)
+                            if agent_id:
+                                cancelled = await self.eidolon._cancel_pending_approvals(agent_id)
+                                if cancelled:
+                                    logger.info(
+                                        f"RECOVERY: Cancelled {cancelled} pending approval(s) "
+                                        f"for user {message.author.id}"
+                                    )
+                                    recovery_succeeded = True
+                            else:
+                                # This should never happen - we got PENDING_APPROVAL
+                                # but no agent exists
+                                logger.error(
+                                    f"CRITICAL: PENDING_APPROVAL error for user {message.author.id} "
+                                    f"but agent does not exist. State inconsistency detected."
+                                )
+                        except (RateLimitError, ModelError, ConflictError) as recover_err:
+                            # Include ConflictError to prevent recursion
+                            logger.exception(f"Failed to recover from PENDING_APPROVAL: {recover_err}")
+
+                        if recovery_succeeded:
+                            await message.channel.send(
+                                "I got stuck on my previous task. I've reset myself - "
+                                "please try your request again."
+                            )
+                        else:
+                            await message.channel.send(
+                                "I'm having trouble processing your request. "
+                                "Please wait a moment and try again."
+                            )
+                    else:
+                        logger.exception(f"Conflict error handling message: {e}")
+                        await message.channel.send(
+                            "I encountered a conflict while processing your request. "
+                            "Please try again."
+                        )
 
                 except Exception as e:
                     logger.exception(f"Unexpected error handling message: {e}")

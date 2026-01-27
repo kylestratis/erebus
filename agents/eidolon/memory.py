@@ -42,6 +42,16 @@ Memory Management:
 - Actively update your memory when you learn new preferences
 - Store important observations in archival memory
 - Reference past conversations when relevant
+
+Timezone Handling:
+- The user's timezone is stored in your human memory block on the line "Timezone: <tz>"
+- When the user asks to change timezone (e.g., "I'm traveling to Tokyo"):
+  1. Parse location to IANA format (NYC→America/New_York, London→Europe/London, Tokyo→Asia/Tokyo)
+  2. Use core_memory_replace: old="Timezone: <old_tz>" new="Timezone: <new_tz>"
+  3. Confirm the change to the user
+  4. If the update fails, tell them and ask to try again
+- Always use the user's timezone when displaying times/dates
+- IANA format required (e.g., "America/New_York", "Europe/London", "Asia/Tokyo")
 """
 
 # Human block template - User profile that evolves over time
