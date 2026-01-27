@@ -353,8 +353,8 @@ print(json.dumps(pending))
 
     echo "  ⚠️  Found $PENDING_COUNT pending approval(s)"
 
-    # Track cancellation results for this agent
-    AGENT_SUCCESS=true
+    # Track cancellation results for this agent using temp files
+    rm -f "$RESULTS_FILE.success" "$RESULTS_FILE.fail"
 
     # Cancel each pending approval
     echo "$RESULT" | python3 -c 'import json,sys; [print(p["id"], p["name"]) for p in json.load(sys.stdin)]' | while read -r tool_call_id tool_name; do
@@ -377,29 +377,40 @@ payload = {
 print(json.dumps(payload))
 ")
 
-        CANCEL_CODE=$(curl -sL --max-time 10 -o /dev/null -w "%{http_code}" \
+        RESP_FILE=$(mktemp)
+        CANCEL_CODE=$(curl -sL --max-time 10 -o "$RESP_FILE" -w "%{http_code}" \
             -X POST "${LETTA_URL}/v1/agents/${id}/messages" \
             -H "Content-Type: application/json" \
             -d "$CANCEL_PAYLOAD" 2>&1) || {
             echo "    ❌ Network error"
-            echo "CANCEL_FAILED" >> "$RESULTS_FILE.cancel"
+            echo "1" >> "$RESULTS_FILE.fail"
+            rm -f "$RESP_FILE"
             continue
         }
 
         if [[ "$CANCEL_CODE" == "200" || "$CANCEL_CODE" == "201" ]]; then
             echo "    ✓ Cancelled"
+            echo "1" >> "$RESULTS_FILE.success"
         else
-            echo "    ❌ Failed (HTTP $CANCEL_CODE)"
-            echo "CANCEL_FAILED" >> "$RESULTS_FILE.cancel"
+            # Extract and show error message from response
+            ERR_MSG=$(cat "$RESP_FILE" 2>/dev/null | head -c 500)
+            echo "    ❌ Failed (HTTP $CANCEL_CODE): $ERR_MSG"
+            echo "1" >> "$RESULTS_FILE.fail"
         fi
+        rm -f "$RESP_FILE"
     done
 
-    # Check if any cancellations failed
-    if [[ -f "$RESULTS_FILE.cancel" ]]; then
-        echo "PARTIAL:$name" >> "$RESULTS_FILE"
-        rm -f "$RESULTS_FILE.cancel"
-    else
+    # Determine agent status based on success/fail counts
+    SUCCESS_COUNT=$(wc -l < "$RESULTS_FILE.success" 2>/dev/null | tr -d ' ') || SUCCESS_COUNT=0
+    FAIL_COUNT=$(wc -l < "$RESULTS_FILE.fail" 2>/dev/null | tr -d ' ') || FAIL_COUNT=0
+    rm -f "$RESULTS_FILE.success" "$RESULTS_FILE.fail"
+
+    if [[ "$FAIL_COUNT" -eq 0 ]]; then
         echo "FIXED:$name" >> "$RESULTS_FILE"
+    elif [[ "$SUCCESS_COUNT" -eq 0 ]]; then
+        echo "ERROR:$name" >> "$RESULTS_FILE"
+    else
+        echo "PARTIAL:$name" >> "$RESULTS_FILE"
     fi
 done
 
@@ -408,17 +419,17 @@ echo ""
 echo "═══════════════════════════════════════"
 echo "Summary:"
 
-OK_COUNT=$(grep -c "^OK:" "$RESULTS_FILE" 2>/dev/null || echo 0)
-FIXED_COUNT=$(grep -c "^FIXED:" "$RESULTS_FILE" 2>/dev/null || echo 0)
-PARTIAL_COUNT=$(grep -c "^PARTIAL:" "$RESULTS_FILE" 2>/dev/null || echo 0)
-ERROR_COUNT=$(grep -c "^ERROR:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+OK_COUNT=$(grep -c "^OK:" "$RESULTS_FILE" 2>/dev/null) || OK_COUNT=0
+FIXED_COUNT=$(grep -c "^FIXED:" "$RESULTS_FILE" 2>/dev/null) || FIXED_COUNT=0
+PARTIAL_COUNT=$(grep -c "^PARTIAL:" "$RESULTS_FILE" 2>/dev/null) || PARTIAL_COUNT=0
+ERROR_COUNT=$(grep -c "^ERROR:" "$RESULTS_FILE" 2>/dev/null) || ERROR_COUNT=0
 
 [[ "$OK_COUNT" -gt 0 ]] && echo "  ✓ $OK_COUNT agent(s) had no pending approvals"
 [[ "$FIXED_COUNT" -gt 0 ]] && echo "  ✓ $FIXED_COUNT agent(s) unstuck successfully"
 [[ "$PARTIAL_COUNT" -gt 0 ]] && echo "  ⚠️  $PARTIAL_COUNT agent(s) partially fixed (some cancellations failed)"
 [[ "$ERROR_COUNT" -gt 0 ]] && echo "  ❌ $ERROR_COUNT agent(s) had errors"
 
-if [[ "$ERROR_COUNT" -gt 0 || "$PARTIAL_COUNT" -gt 0 ]]; then
+if [[ "$ERROR_COUNT" -gt 0 ]] || [[ "$PARTIAL_COUNT" -gt 0 ]]; then
     echo ""
     echo "Some agents may still need attention."
     exit 1
@@ -512,6 +523,9 @@ except Exception as e:
 
     echo "  ⚠️  Found $PENDING_COUNT pending approval(s)"
 
+    # Track cancellation results for this agent using temp files
+    rm -f "$RESULTS_FILE.success" "$RESULTS_FILE.fail"
+
     # Cancel each pending approval
     echo "$RESULT" | python3 -c 'import json,sys; [print(p["id"], p["name"]) for p in json.load(sys.stdin)]' | while read -r tool_call_id tool_name; do
         echo "  🔄 Cancelling: $tool_name ($tool_call_id)"
@@ -533,27 +547,38 @@ payload = {
 print(json.dumps(payload))
 ")
 
-        # Pass JSON payload via stdin to avoid shell escaping issues
-        CANCEL_CODE=$(echo "$CANCEL_PAYLOAD" | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 -o /dev/null -w '%{http_code}' -X POST 'http://localhost:8283/v1/agents/${id}/messages' -H 'Content-Type: application/json' -d @-" 2>&1) || {
+        # Pass JSON payload via stdin, capture response
+        RESP_FILE=$(mktemp)
+        CANCEL_CODE=$(echo "$CANCEL_PAYLOAD" | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "cd /opt/erebus && docker compose -f docker-compose.prod.yml exec -T letta curl -sL --max-time 10 -w '%{http_code}' -X POST 'http://localhost:8283/v1/agents/${id}/messages' -H 'Content-Type: application/json' -d @-" > "$RESP_FILE" 2>&1; tail -c 3 "$RESP_FILE") || {
             echo "    ❌ Network error"
-            echo "CANCEL_FAILED" >> "$RESULTS_FILE.cancel"
+            echo "1" >> "$RESULTS_FILE.fail"
+            rm -f "$RESP_FILE"
             continue
         }
 
         if [[ "$CANCEL_CODE" == "200" || "$CANCEL_CODE" == "201" ]]; then
             echo "    ✓ Cancelled"
+            echo "1" >> "$RESULTS_FILE.success"
         else
-            echo "    ❌ Failed (HTTP $CANCEL_CODE)"
-            echo "CANCEL_FAILED" >> "$RESULTS_FILE.cancel"
+            # Show error from response (everything except last 3 chars which is the HTTP code)
+            ERR_MSG=$(head -c -3 "$RESP_FILE" 2>/dev/null | head -c 500)
+            echo "    ❌ Failed (HTTP $CANCEL_CODE): $ERR_MSG"
+            echo "1" >> "$RESULTS_FILE.fail"
         fi
+        rm -f "$RESP_FILE"
     done
 
-    # Check if any cancellations failed
-    if [[ -f "$RESULTS_FILE.cancel" ]]; then
-        echo "PARTIAL:$name" >> "$RESULTS_FILE"
-        rm -f "$RESULTS_FILE.cancel"
-    else
+    # Determine agent status based on success/fail counts
+    SUCCESS_COUNT=$(wc -l < "$RESULTS_FILE.success" 2>/dev/null | tr -d ' ') || SUCCESS_COUNT=0
+    FAIL_COUNT=$(wc -l < "$RESULTS_FILE.fail" 2>/dev/null | tr -d ' ') || FAIL_COUNT=0
+    rm -f "$RESULTS_FILE.success" "$RESULTS_FILE.fail"
+
+    if [[ "$FAIL_COUNT" -eq 0 ]]; then
         echo "FIXED:$name" >> "$RESULTS_FILE"
+    elif [[ "$SUCCESS_COUNT" -eq 0 ]]; then
+        echo "ERROR:$name" >> "$RESULTS_FILE"
+    else
+        echo "PARTIAL:$name" >> "$RESULTS_FILE"
     fi
 done
 
@@ -562,17 +587,17 @@ echo ""
 echo "═══════════════════════════════════════"
 echo "Summary:"
 
-OK_COUNT=$(grep -c "^OK:" "$RESULTS_FILE" 2>/dev/null || echo 0)
-FIXED_COUNT=$(grep -c "^FIXED:" "$RESULTS_FILE" 2>/dev/null || echo 0)
-PARTIAL_COUNT=$(grep -c "^PARTIAL:" "$RESULTS_FILE" 2>/dev/null || echo 0)
-ERROR_COUNT=$(grep -c "^ERROR:" "$RESULTS_FILE" 2>/dev/null || echo 0)
+OK_COUNT=$(grep -c "^OK:" "$RESULTS_FILE" 2>/dev/null) || OK_COUNT=0
+FIXED_COUNT=$(grep -c "^FIXED:" "$RESULTS_FILE" 2>/dev/null) || FIXED_COUNT=0
+PARTIAL_COUNT=$(grep -c "^PARTIAL:" "$RESULTS_FILE" 2>/dev/null) || PARTIAL_COUNT=0
+ERROR_COUNT=$(grep -c "^ERROR:" "$RESULTS_FILE" 2>/dev/null) || ERROR_COUNT=0
 
 [[ "$OK_COUNT" -gt 0 ]] && echo "  ✓ $OK_COUNT agent(s) had no pending approvals"
 [[ "$FIXED_COUNT" -gt 0 ]] && echo "  ✓ $FIXED_COUNT agent(s) unstuck successfully"
 [[ "$PARTIAL_COUNT" -gt 0 ]] && echo "  ⚠️  $PARTIAL_COUNT agent(s) partially fixed (some cancellations failed)"
 [[ "$ERROR_COUNT" -gt 0 ]] && echo "  ❌ $ERROR_COUNT agent(s) had errors"
 
-if [[ "$ERROR_COUNT" -gt 0 || "$PARTIAL_COUNT" -gt 0 ]]; then
+if [[ "$ERROR_COUNT" -gt 0 ]] || [[ "$PARTIAL_COUNT" -gt 0 ]]; then
     echo ""
     echo "Some agents may still need attention."
     exit 1
