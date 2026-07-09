@@ -1,0 +1,42 @@
+[
+  {
+    "hash": "32968d9f929fbde30c85ae917b8ecf0f65401dbe",
+    "short_hash": "32968d9",
+    "author": "Kyle Stratis",
+    "date": "2026-01-24T23:29:18-05:00",
+    "message": "Add PENDING_APPROVAL recovery mechanism for stuck agents\n\nWhen the bot crashes while a tool is awaiting client-side approval,\nthe Letta agent gets stuck in PENDING_APPROVAL state indefinitely.\nThis adds automatic recovery on startup:\n\n- New _cancel_pending_approvals() method checks for and cancels\n  pending tool approvals when finding an existing agent\n- Processes ALL pending approvals (not just the first)\n- Comprehensive error handling and RECOVERY: prefixed logging\n- 9 new tests covering all edge cases\n\nAlso includes:\n- Option A env file pattern (.env.local for dev, .env for prod)\n- Letta mise tasks (letta:up, letta:down, letta:logs, etc.)\n- Updated healthcheck to use /v1/models endpoint\n- Syncthing deployment documentation\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+    "files_changed": 9
+  },
+  {
+    "hash": "2d21ea23df77cea588611e56bf1fd5522fdcb9d7",
+    "short_hash": "2d21ea2",
+    "author": "Kyle Stratis",
+    "date": "2026-01-07T22:55:49-05:00",
+    "message": "Integrate EidolonMemory with Letta for persistent memory\n\nAdd EidolonMemory system that wraps Letta SDK for per-user persistent memory:\n\n- Add agents/eidolon/ module with client, memory blocks, and tool registry\n- Add Docker configuration for Letta server with PostgreSQL\n- Integrate EidolonMemory into bot client, replacing ConversationManager\n- Update scheduler jobs to use EidolonMemory for AI operations\n- Update slash commands in core.py to use eidolon.chat()\n- Add ToolRegistry for native vault tool execution in bot process\n- Remove unused claude_api_key from config (Letta handles LLM)\n- Clean up stale ConversationManager exports from agents/__init__.py\n- Update README with local development and DigitalOcean deployment\n- Add docs/eidolon-memory.md with architecture documentation\n- Add comprehensive tests for EidolonMemory module\n\nThis completes Phases 1-4 and 6 of the EidolonMemory implementation plan.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+    "files_changed": 19
+  },
+  {
+    "hash": "417d4cd4c2fe0421dbad93bc681543b106154041",
+    "short_hash": "417d4cd",
+    "author": "Kyle Stratis",
+    "date": "2026-01-04T17:30:17-05:00",
+    "message": "Add scheduler configuration options to .env.example\n\nDocuments all new environment variables for the scheduler: SCHEDULER_ENABLED, SCHEDULER_TIMEZONE, and per-job ENABLED/CRON settings for daily note, end-of-day sync, and weekly review jobs.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+    "files_changed": 1
+  },
+  {
+    "hash": "dfe6589c1144f927276dd1f89a53f68d91df36c9",
+    "short_hash": "dfe6589",
+    "author": "Kyle Stratis",
+    "date": "2026-01-04T17:28:34-05:00",
+    "message": "Add scheduler framework for automated jobs\n\n- Create bot/scheduler/ module with ScheduledJob abstraction\n- Implement APScheduler-based Scheduler class with cron scheduling\n- Add 3 scheduled jobs:\n  - DailyNoteJob: 6am daily note generation + morning briefing DM\n  - EndOfDaySyncJob: 11:55pm bidirectional sync + rollover + summary DM\n  - WeeklyReviewJob: Sunday 6pm review reminder DM\n- Add scheduler configuration to Settings (timezone, cron expressions, toggles)\n- Integrate scheduler with ErebusBot lifecycle (start/stop)\n- Add cron expression validation at config load time\n- Fix exception handling to catch specific JobLookupError\n- Remove unused python-crontab dependency, pin apscheduler <4.0.0\n- Comprehensive test coverage (36 new tests, 108 total passing)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+    "files_changed": 12
+  },
+  {
+    "hash": "0d29b796e186092b850572749fbfe443ca4d56a1",
+    "short_hash": "0d29b79",
+    "author": "Kyle Stratis",
+    "date": "2026-01-04T10:39:18-05:00",
+    "message": "Adds deciduous files",
+    "files_changed": 10
+  }
+]
